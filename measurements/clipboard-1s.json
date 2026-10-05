@@ -1,0 +1,15 @@
+{
+  "elapsed_seconds" : 30.001492791663622,
+  "interval_seconds" : 1,
+  "mode" : "clipboard",
+  "observed_change_events" : 0,
+  "os" : "Version 27.0.1 (Build 26A434)",
+  "physical_memory_bytes" : 17179869184,
+  "process_cpu_percent_one_core" : 0.0066930002914986613,
+  "process_cpu_seconds_excluding_startup" : 0.0020079999999999959,
+  "process_peak_rss_bytes_including_startup" : 7864320,
+  "requested_duration_seconds" : 30,
+  "scope" : "Probe process only; excludes pasteboard server, SSH, Tailscale, image encoding and network.",
+  "timer_callbacks" : 30,
+  "tolerance_seconds" : 0.10000000000000001
+}

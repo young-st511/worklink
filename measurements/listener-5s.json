@@ -1,0 +1,20 @@
+{
+  "child_peak_rss_bytes": 2342912,
+  "children_cpu_seconds": 0.09572599999999999,
+  "combined_cpu_percent_one_core": 0.34285139101215006,
+  "elapsed_seconds": 30.002794999993057,
+  "exit_statuses": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "interval_seconds": 5,
+  "invocations": 6,
+  "mode": "local-lsof-current-user",
+  "parent_cpu_seconds_excluding_startup": 0.0071390000000000065,
+  "parent_peak_rss_bytes_including_startup": 17039360,
+  "scope": "Local Python harness and its lsof children only; not the office Mac, SSH or Tailscale. No socket listing retained."
+}

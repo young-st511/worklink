@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+*.log
+.env
+.env.*
+!.env.example
+config.local.*
+state/
+inbox/
