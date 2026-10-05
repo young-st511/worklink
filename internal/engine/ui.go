@@ -2,15 +2,19 @@ package engine
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
-	"github.com/young-st511/worklink/internal/address"
-	"github.com/young-st511/worklink/internal/model"
 	"io"
 	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
+
+	"github.com/young-st511/worklink/internal/address"
+	"github.com/young-st511/worklink/internal/install"
+	"github.com/young-st511/worklink/internal/model"
 )
 
 type Command struct {
@@ -75,6 +79,15 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			problem = e.RefreshTitle(c.PortID)
 		case "clear_pending":
 			problem = e.ClearPending()
+		case "install_remote":
+			h, ok := e.Snapshot().Config.Host(c.Input)
+			if !ok {
+				problem = errors.New("SSH 대상을 등록해 주세요")
+				break
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+			problem = install.Remote(ctx, h, c.Path)
+			cancel()
 		default:
 			problem = errors.New("지원하지 않는 앱 명령입니다")
 		}
@@ -90,7 +103,7 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			emit(Event{Kind: "reply", Error: err.Error()})
 			continue
 		}
-		if c.Method == "copy_path" || c.Method == "title" {
+		if c.Method == "copy_path" || c.Method == "title" || c.Method == "install_remote" {
 			go handle(c)
 		} else {
 			handle(c)

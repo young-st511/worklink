@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"testing"
+
 	"github.com/young-st511/worklink/internal/model"
 	"github.com/young-st511/worklink/internal/storage"
 	"github.com/young-st511/worklink/internal/wire"
-	"testing"
 )
 
 func TestHelloAndEOF(t *testing.T) {

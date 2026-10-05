@@ -1,8 +1,9 @@
 package model
 
 import (
-	"github.com/young-st511/worklink/internal/address"
 	"testing"
+
+	"github.com/young-st511/worklink/internal/address"
 )
 
 func TestConfigCanonicalAndDuplicate(t *testing.T) {

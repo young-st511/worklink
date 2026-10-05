@@ -1,6 +1,6 @@
 # 개발 서버 주소 입력 파서
 
-사용자가 확정한 서버 등록 UX의 설계입니다. 아직 실행 가능한 파서를 구현한 것은 아닙니다. 별도 의존성 없이 Go 표준 `net/url`, `net/netip`, `net.SplitHostPort`를 조합하는 작은 함수로 구현할 예정입니다.
+사용자가 확정한 서버 등록 UX를 `internal/address.Parse`로 구현했습니다. 별도 의존성 없이 Go 표준 `net/url`, `net/netip`, `net.SplitHostPort`를 사용합니다.
 
 ## 세 종류의 주소를 구분
 

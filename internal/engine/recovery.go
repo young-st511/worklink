@@ -3,11 +3,12 @@ package engine
 import (
 	"encoding/json"
 	"errors"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/storage"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/storage"
 )
 
 func (e *Engine) journal(j Job) string { return filepath.Join(e.store.Root, "queue", j.ID+".json") }

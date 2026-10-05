@@ -38,6 +38,9 @@ func TestNeedsInput(t *testing.T) {
 	}
 }
 func TestQueryAndFragmentPreserved(t *testing.T) {
+	if Parse("http://localhost:5173/?q=%GG").Error == "" {
+		t.Fatal("invalid percent encoding accepted")
+	}
 	for _, s := range []string{"http://localhost:5173/?q=x'", "'http://localhost:5173/a?q=a%20b#view%2Fitem'"} {
 		r := Parse(s)
 		if r.Error != "" {

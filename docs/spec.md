@@ -9,7 +9,7 @@
 - S5: 버전·길이 제한 framed stdio 프로토콜, 원격 hello/upload/list/exists/check/cleanup, EOF 종료.
 - S6: 시스템 OpenSSH 전용 master와 persistent 헬퍼 채널. Compression=no, batch host-key 확인, timeout/cancel, 소유한 연결만 종료.
 - S7: 등록 포트 연결·IPv4/IPv6 localhost·충돌 오류·재연결·등록 endpoint만 확인, title은 요청 기반 bounded HTTP.
-- S8: 전송 직렬화·8개/64MiB 제한·16MiB 원본 상한 설정 가능, generation/host 고정·retry/ACK 복구·restart 자동 전송 금지.
+- S8: 전송 직렬화·8개/256MiB 제한·64MiB 원본 상한 설정 가능, generation/host 고정·retry/ACK 복구·restart 자동 전송 금지.
 - S9: UI 명령/상태 JSON stdio와 CLI. OFF에서 세션/정기 통신 정지, 재연결 backoff·인증 오류 반복 금지.
 - S10: AppKit 메뉴바 좌클릭 목록/우클릭 토글·OFF dimmed+다른 모양·무음·최근 5개·브라우저 열기·접속 상세 펼치기.
 - S11: 서버/SSH 대상 등록·편집·삭제·설정, 느슨한 입력 미리보기·오류/후보 선택, 수동 명칭 우선.
@@ -22,3 +22,5 @@
 S1–S5 구현: `internal/address.Parse`, `model.Config.Validate`, `storage.Store.Receive/Verify/Cleanup/SaveConfig`, `remote.Serve`, `wire.Read/Write`, `cmd/worklink.run`. 테스트와 양쪽 리뷰 통과. S3의 ACK 후 로컬 큐 삭제는 Step 2에서 검증합니다. 각 단계의 결과는 [validation](validation.md)에 기록합니다.
 
 S6–S9 및 S3 로컬 ACK 후 삭제 구현: `transport.Connect/SSH.Call/Forward/Close`, `engine.Engine/ServeUI`, CLI `sendImage`. 원본 SHA-256·실제 SSH IPv4/IPv6 터널·제목·경로 재복사·OFF 종료, 취소·ACK 저장 실패·restart 회복·원래 대상 retry·queue orphan 한도 테스트와 양쪽 재리뷰 통과.
+
+S10–S14 구현: `macos/AppDelegate`, `DashboardController`, `SettingsController`, `ClipboardReader`, `CoreBridge`, `install.CleanupPlist/CleanupJob/Remote`, `scripts/build-app.sh`. Go race/vet, native 회귀 테스트, 실제 SSH+named pasteboard 원본 PNG·경로 교체 및 AppKit 밝은/어두운/OFF/오류/설정 뷰 렌더 확인. 실제 마우스·브라우저 열기·권한·자동 시작·일일 작업 활성화는 환경 검증으로 남았으며 validation.md에 구분했습니다.

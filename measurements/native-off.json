@@ -1,0 +1,13 @@
+{
+  "mode": "native-app-OFF",
+  "duration_seconds": 30.15979737500311,
+  "samples_after_startup": 26,
+  "mean_sampled_cpu_percent": 0.0038461538461538464,
+  "max_sampled_cpu_percent": 0.1,
+  "mean_combined_rss_mib": 62.92427884615385,
+  "max_combined_rss_mib": 63.140625,
+  "process_counts": [
+    2
+  ],
+  "scope": "Swift menu bar app and direct Go child; ps sampling; OFF; no power/battery measurement; no real clipboard contents or installed login item."
+}

@@ -112,6 +112,15 @@ sys.stdin.read();s.shutdown()
         wait(lambda e: e.get("state") and not e["state"]["on"])
         app.stdin.close();app.wait(timeout=10)
         assert app.returncode==0, app.stderr.read()
+        if os.environ.get("WORKLINK_QA_NATIVE") == "1":
+            source_png = Path('.build/previews/on-light.png').resolve()
+            native_env = dict(env, WORKLINK_QA_IMAGE_PATH=str(source_png))
+            native = subprocess.run(['.build/Worklink.app/Contents/MacOS/Worklink','--qa-transfer'],capture_output=True,text=True,env=native_env,timeout=30)
+            assert native.stdout.strip(), dict(native_exit=native.returncode,native_error=native.stderr[-4000:])
+            result = json.loads(native.stdout.strip().splitlines()[-1])
+            assert result['path_replaced'], result
+            assert result['sha256'] == hashlib.sha256(source_png.read_bytes()).hexdigest(), result
+            print(json.dumps(dict(native_app_pipeline=True,original_png_sha256=True,named_clipboard_path_replaced=True)))
         print(json.dumps(dict(real_ssh=True, tunnel_http=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, off_shutdown=True)))
 finally:
     if app and app.poll() is None:

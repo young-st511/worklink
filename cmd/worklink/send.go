@@ -5,14 +5,15 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/remote"
-	"github.com/young-st511/worklink/internal/storage"
-	"github.com/young-st511/worklink/internal/transport"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/remote"
+	"github.com/young-st511/worklink/internal/storage"
+	"github.com/young-st511/worklink/internal/transport"
 )
 
 func sendImage(args []string, c model.Config) error {

@@ -3,15 +3,16 @@ package remote
 import (
 	"context"
 	"errors"
-	"github.com/young-st511/worklink/internal/address"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/storage"
-	"github.com/young-st511/worklink/internal/wire"
 	"io"
 	"net"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/young-st511/worklink/internal/address"
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/storage"
+	"github.com/young-st511/worklink/internal/wire"
 )
 
 type Request struct {
@@ -38,6 +39,9 @@ type Response struct {
 }
 
 func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
+	if err := s.CleanupIfDue(time.Now()); err != nil {
+		return err
+	}
 	// The lease also ends an orphaned helper while no requests arrive.
 	var inputMu sync.Mutex
 	lease := time.AfterFunc(2*time.Minute, func() {

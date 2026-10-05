@@ -5,9 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/remote"
-	"github.com/young-st511/worklink/internal/wire"
 	"io"
 	"net"
 	"os"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/remote"
+	"github.com/young-st511/worklink/internal/wire"
 )
 
 type Connection interface {
@@ -57,7 +58,7 @@ type SSH struct {
 }
 
 func options() []string {
-	return []string{"-o", "BatchMode=yes", "-o", "Compression=no", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=2", "-o", "ExitOnForwardFailure=yes"}
+	return []string{"-o", "BatchMode=yes", "-o", "RemoteCommand=none", "-o", "RequestTTY=no", "-o", "Compression=no", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=2", "-o", "ExitOnForwardFailure=yes"}
 }
 func Connect(ctx context.Context, h model.Host) (Connection, error) {
 	if e := model.ValidateHost(h); e != nil {
@@ -68,7 +69,7 @@ func Connect(ctx context.Context, h model.Host) (Connection, error) {
 		return nil, e
 	}
 	s := &SSH{rpc: make(chan struct{}, 1), host: h, dir: dir, socket: filepath.Join(dir, "ctl"), masterDone: make(chan struct{}), helperDone: make(chan struct{})}
-	args := append(options(), "-M", "-N", "-S", s.socket, "-o", "ControlMaster=yes", "-o", "ControlPersist=no", h.Name)
+	args := append(options(), "-o", "ClearAllForwardings=yes", "-M", "-N", "-S", s.socket, "-o", "ControlMaster=yes", "-o", "ControlPersist=no", h.Name)
 	s.master = exec.CommandContext(ctx, "/usr/bin/ssh", args...)
 	s.master.Stderr = &s.log
 	if e = s.master.Start(); e != nil {
@@ -97,7 +98,7 @@ func Connect(ctx context.Context, h model.Host) (Connection, error) {
 			ready = e == nil
 		}
 	}
-	args = append(options(), "-S", s.socket, "-o", "ControlMaster=no", "-T", h.Name, "exec "+h.Helper+" remote --stdio")
+	args = append(options(), "-S", s.socket, "-o", "ControlMaster=no", "-o", "ClearAllForwardings=yes", "-T", h.Name, "exec "+h.Helper+" remote --stdio")
 	s.helper = exec.CommandContext(ctx, "/usr/bin/ssh", args...)
 	s.helper.Stderr = &s.log
 	s.in, e = s.helper.StdinPipe()
@@ -171,11 +172,11 @@ func (s *SSH) Forward(ctx context.Context, p model.Port, remove bool) error {
 	target := remoteHost + ":" + strconv.Itoa(p.Endpoint.RemotePort)
 	a := "127.0.0.1:" + strconv.Itoa(p.LocalPort) + ":" + target
 	b := "[::1]:" + strconv.Itoa(p.LocalPort) + ":" + target
-	args := append(options(), "-S", s.socket, "-O", verb, "-L", a, "-L", b, s.host.Name)
+	args := append(options(), "-F", "/dev/null", "-S", s.socket, "-O", verb, "-L", a, "-L", b, s.host.Name)
 	cmd := exec.CommandContext(ctx, "/usr/bin/ssh", args...)
 	out, e := cmd.CombinedOutput()
 	if e != nil && !remove {
-		rollback := exec.CommandContext(ctx, "/usr/bin/ssh", append(options(), "-S", s.socket, "-O", "cancel", "-L", a, "-L", b, s.host.Name)...)
+		rollback := exec.CommandContext(ctx, "/usr/bin/ssh", append(options(), "-F", "/dev/null", "-S", s.socket, "-O", "cancel", "-L", a, "-L", b, s.host.Name)...)
 		rollback.Run()
 	}
 	if e != nil {
@@ -196,7 +197,7 @@ func (s *SSH) Close() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		exec.CommandContext(ctx, "/usr/bin/ssh", "-S", s.socket, "-O", "exit", s.host.Name).Run()
+		exec.CommandContext(ctx, "/usr/bin/ssh", "-F", "/dev/null", "-S", s.socket, "-O", "exit", s.host.Name).Run()
 		if s.master != nil && s.master.Process != nil {
 			s.master.Process.Kill()
 		}

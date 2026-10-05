@@ -66,6 +66,9 @@ func Parse(input string) Result {
 		return Result{Error: "주소를 해석할 수 없습니다: " + err.Error()}
 	}
 	u.Scheme = strings.ToLower(u.Scheme)
+	if _, e := url.QueryUnescape(u.RawQuery); e != nil {
+		return Result{Error: "주소의 query 인코딩을 확인해 주세요"}
+	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return Result{Error: "HTTP 또는 HTTPS 주소를 입력해 주세요"}
 	}

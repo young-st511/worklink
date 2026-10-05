@@ -2,14 +2,15 @@ package engine
 
 import (
 	"context"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/remote"
-	"github.com/young-st511/worklink/internal/transport"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/remote"
+	"github.com/young-st511/worklink/internal/transport"
 )
 
 type slowConnection struct {

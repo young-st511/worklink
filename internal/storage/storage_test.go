@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
-	"github.com/young-st511/worklink/internal/model"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/young-st511/worklink/internal/model"
 )
 
 func TestOriginalAndRetry(t *testing.T) {

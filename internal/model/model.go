@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/young-st511/worklink/internal/address"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/young-st511/worklink/internal/address"
 )
 
 const Version = "0.1.0"
@@ -42,7 +44,7 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	return Config{Hosts: []Host{}, Ports: []Port{}, Limits: Limits{16 << 20, 64 << 20, 8, 512 << 20}}
+	return Config{Hosts: []Host{}, Ports: []Port{}, Limits: Limits{64 << 20, 256 << 20, 8, 2 << 30}}
 }
 
 var hostRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,127}$`)
@@ -95,6 +97,21 @@ func (c Config) Validate() error {
 	locals := map[int]bool{}
 	ends := map[string]bool{}
 	for _, p := range c.Ports {
+		if _, err := url.QueryUnescape(p.Endpoint.Query); err != nil {
+			return errors.New("query 인코딩을 확인해 주세요")
+		}
+		if p.Endpoint.RawPath != "" {
+			decoded, err := url.PathUnescape(p.Endpoint.RawPath)
+			if err != nil || decoded != p.Endpoint.Path {
+				return errors.New("path 인코딩을 확인해 주세요")
+			}
+		}
+		if p.Endpoint.RawFragment != "" {
+			decoded, err := url.PathUnescape(p.Endpoint.RawFragment)
+			if err != nil || decoded != p.Endpoint.Fragment {
+				return errors.New("fragment 인코딩을 확인해 주세요")
+			}
+		}
 		r := address.Parse(p.Endpoint.Scheme + "://" + p.Endpoint.Address() + p.Endpoint.Path)
 		if !ValidID(p.ID) || r.Error != "" || r.NeedsPort || r.Endpoint.RemoteHost != p.Endpoint.RemoteHost || !seen[p.Host] || p.LocalPort < 1024 || p.LocalPort > 65535 {
 			return errors.New("등록된 개발 서버 주소를 확인해 주세요")

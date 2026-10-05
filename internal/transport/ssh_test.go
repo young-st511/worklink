@@ -2,9 +2,10 @@ package transport
 
 import (
 	"context"
-	"github.com/young-st511/worklink/internal/remote"
 	"testing"
 	"time"
+
+	"github.com/young-st511/worklink/internal/remote"
 )
 
 func TestRPCWaitHonorsDeadline(t *testing.T) {

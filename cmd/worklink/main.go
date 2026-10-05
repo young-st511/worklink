@@ -5,15 +5,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/young-st511/worklink/internal/address"
-	"github.com/young-st511/worklink/internal/engine"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/remote"
-	"github.com/young-st511/worklink/internal/storage"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/young-st511/worklink/internal/address"
+	"github.com/young-st511/worklink/internal/engine"
+	"github.com/young-st511/worklink/internal/install"
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/remote"
+	"github.com/young-st511/worklink/internal/storage"
 )
 
 func output(v any) error { return json.NewEncoder(os.Stdout).Encode(v) }
@@ -53,6 +55,25 @@ func run(args []string) error {
 	}
 	s.Limits = c.Limits
 	switch args[0] {
+	case "cleanup":
+		if len(args) < 2 {
+			return errors.New("worklink cleanup install|uninstall [--hour 4] [--dry-run]")
+		}
+		f := flag.NewFlagSet("cleanup", flag.ContinueOnError)
+		hour := f.Int("hour", 4, "실행 시각")
+		dry := f.Bool("dry-run", false, "미리보기")
+		if e = f.Parse(args[2:]); e != nil {
+			return e
+		}
+		if args[1] != "install" && args[1] != "uninstall" {
+			return errors.New("cleanup install 또는 uninstall을 사용해 주세요")
+		}
+		result, e := install.CleanupJob(s.Root, *hour, args[1] == "uninstall", *dry)
+		if e != nil {
+			return e
+		}
+		fmt.Println(result)
+		return nil
 	case "remote":
 		if len(args) != 2 || args[1] != "--stdio" {
 			return errors.New("worklink remote --stdio")

@@ -6,11 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/young-st511/worklink/internal/address"
-	"github.com/young-st511/worklink/internal/model"
-	"github.com/young-st511/worklink/internal/remote"
-	"github.com/young-st511/worklink/internal/storage"
-	"github.com/young-st511/worklink/internal/transport"
 	"html"
 	"io"
 	"net/http"
@@ -21,6 +16,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/young-st511/worklink/internal/address"
+	"github.com/young-st511/worklink/internal/model"
+	"github.com/young-st511/worklink/internal/remote"
+	"github.com/young-st511/worklink/internal/storage"
+	"github.com/young-st511/worklink/internal/transport"
 )
 
 type Job struct {
@@ -179,6 +180,16 @@ func (e *Engine) SaveConfig(c model.Config) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
+	e.mu.Lock()
+	for _, j := range e.state.Jobs {
+		if j.Status != "complete" {
+			if _, ok := c.Host(j.Host); !ok {
+				e.mu.Unlock()
+				return errors.New("대기 이미지가 있는 SSH 대상은 삭제하거나 이름을 바꿀 수 없습니다. 먼저 대기 파일을 정리해 주세요")
+			}
+		}
+	}
+	e.mu.Unlock()
 	wasOn := e.Snapshot().On
 	e.SetOn(false)
 	if err := e.store.SaveConfig(&c); err != nil {

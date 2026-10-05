@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/young-st511/worklink/internal/model"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"syscall"
 	"time"
+
+	"github.com/young-st511/worklink/internal/model"
 )
 
 type Store struct {
@@ -305,6 +306,25 @@ func (s *Store) Cleanup(now time.Time, dry bool) ([]string, error) {
 		e = AtomicJSON(filepath.Join(s.Root, "cleanup.json"), map[string]any{"last_success": now.UTC()})
 	}
 	return out, e
+}
+func (s *Store) CleanupIfDue(now time.Time) error {
+	var record struct {
+		LastSuccess time.Time `json:"last_success"`
+	}
+	b, e := os.ReadFile(filepath.Join(s.Root, "cleanup.json"))
+	if e != nil && !os.IsNotExist(e) {
+		return e
+	}
+	if e == nil {
+		if e = json.Unmarshal(b, &record); e != nil {
+			return e
+		}
+		if now.Sub(record.LastSuccess) < 24*time.Hour {
+			return nil
+		}
+	}
+	_, e = s.Cleanup(now, false)
+	return e
 }
 func DigestFile(path string) (int64, string, error) {
 	f, e := os.Open(path)
