@@ -2,6 +2,8 @@
 
 측정일: 2026-10-05. 현재 접근 가능한 Mac에서 수행한 작은 타당성 실험입니다. 집·사무실 양쪽 환경이나 제품 앱 전체를 시험한 결과가 아닙니다.
 
+후속 사용자 결정으로 개발 서버는 수동 등록제로 정했습니다. 아래 `lsof` 결과는 전체 리스너 검색을 검토했던 초기 비교 기록이며, 등록된 포트만 TCP 확인하는 현재 설계의 성능 수치가 아닙니다.
+
 ## 환경과 실행
 
 - macOS 27.0.1, arm64, 물리 메모리 16 GiB.
@@ -37,7 +39,7 @@ python3 experiments/listener-cost.py > measurements/listener-5s.json
 
 Python 부모 프로세스의 최대 RSS는 16.25 MiB, `lsof` 자식의 최대 RSS는 2.23 MiB였습니다. 이는 각각의 peak이며 같은 순간의 합계 메모리가 아닙니다. Python 하네스 메모리를 Go 헬퍼 메모리 추정에 사용하지 않습니다. 원본: [listener JSON](../measurements/listener-5s.json).
 
-현재 환경에서는 주기적 리스너 검색이 변경 번호 확인보다 더 많은 CPU를 사용했습니다. 서로 다른 프로세스 구성의 단일 실험이므로 정확한 성능 배수나 다른 Mac의 사용량으로 해석하지 않습니다. 등록 방식 우선, 자동 발견은 선택형이라는 설계를 뒷받침하는 참고 결과입니다.
+현재 환경에서는 주기적 리스너 검색이 변경 번호 확인보다 더 많은 CPU를 사용했습니다. 서로 다른 프로세스 구성의 단일 실험이므로 정확한 성능 배수나 다른 Mac의 사용량으로 해석하지 않습니다. 전체 리스너 검색을 제외하고 수동 등록제로 정한 결정의 참고 자료입니다.
 
 ## 측정 한계
 
@@ -52,9 +54,9 @@ Python 부모 프로세스의 최대 RSS는 16.25 MiB, `lsof` 자식의 최대 R
 ## 제품 검증에서 추가할 것
 
 1. 각 Mac에서 30분 유휴와 실제 업무 1시간을 기존 스크립트/Worklink 조건으로 비교합니다.
-2. 실제 signed 앱에서 클립보드 권한, 4K 이미지 변환·동시 복사·클립보드 도구 충돌을 확인합니다.
+2. 실제 signed 앱에서 클립보드 권한, 4K 원본 이미지 추출·전송·동시 복사·클립보드 도구 충돌을 확인합니다.
 3. 직접 연결/DERP 경유 환경의 전송 지연과 자원 사용을 구분합니다.
 4. Activity Monitor/Instruments로 시스템 에너지·Idle Wake Ups·physical footprint를 관찰합니다.
-5. 포트 발견은 등록 방식과 5초/15초 소켓 열거를 비교한 뒤 기본값을 정합니다.
+5. 등록한 포트만 TCP 확인하는 방식의 5초 주기·타임아웃·동시 확인 제한을 실제 두 Mac에서 측정합니다.
 
 Apple은 타이머 중지·tolerance와 실제 에너지 도구 사용을 안내하고 있습니다. Go 코어가 생기면 공식 진단 도구로 CPU·heap·blocking 비용도 확인합니다. [Apple 에너지 가이드](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/Timers.html), [Go Diagnostics](https://go.dev/doc/diagnostics)
