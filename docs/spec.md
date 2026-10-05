@@ -20,3 +20,5 @@
 ## 현재 동작과 검증
 
 S1–S5 구현: `internal/address.Parse`, `model.Config.Validate`, `storage.Store.Receive/Verify/Cleanup/SaveConfig`, `remote.Serve`, `wire.Read/Write`, `cmd/worklink.run`. 테스트와 양쪽 리뷰 통과. S3의 ACK 후 로컬 큐 삭제는 Step 2에서 검증합니다. 각 단계의 결과는 [validation](validation.md)에 기록합니다.
+
+S6–S9 및 S3 로컬 ACK 후 삭제 구현: `transport.Connect/SSH.Call/Forward/Close`, `engine.Engine/ServeUI`, CLI `sendImage`. 원본 SHA-256·실제 SSH IPv4/IPv6 터널·제목·경로 재복사·OFF 종료, 취소·ACK 저장 실패·restart 회복·원래 대상 retry·queue orphan 한도 테스트와 양쪽 재리뷰 통과.

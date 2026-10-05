@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/young-st511/worklink/internal/address"
+	"github.com/young-st511/worklink/internal/engine"
 	"github.com/young-st511/worklink/internal/model"
 	"github.com/young-st511/worklink/internal/remote"
 	"github.com/young-st511/worklink/internal/storage"
@@ -35,6 +36,12 @@ func run(args []string) error {
 			return errors.New("worklink parse <주소>")
 		}
 		return output(address.Parse(args[1]))
+	}
+	if args[0] == "ui" {
+		if len(args) != 2 || args[1] != "--stdio" {
+			return errors.New("worklink ui --stdio")
+		}
+		return engine.ServeUI(storage.DefaultRoot(), os.Stdin, os.Stdout)
 	}
 	s, e := storage.Open(storage.DefaultRoot(), model.DefaultConfig().Limits)
 	if e != nil {
@@ -167,6 +174,8 @@ func run(args []string) error {
 				return e
 			}
 			return output(all)
+		case "send":
+			return sendImage(args[2:], c)
 		case "latest":
 			all, e := s.List()
 			if e != nil {

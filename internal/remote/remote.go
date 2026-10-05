@@ -15,6 +15,7 @@ import (
 )
 
 type Request struct {
+	Limits    *model.Limits               `json:"limits,omitempty"`
 	Version   int                         `json:"version"`
 	Op        string                      `json:"op"`
 	ID        string                      `json:"id,omitempty"`
@@ -64,6 +65,23 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 			return errors.New(res.Error)
 		}
 		switch q.Op {
+		case "limits":
+			if q.Limits == nil {
+				err = errors.New("용량 설정이 없습니다")
+				break
+			}
+			c, e := s.LoadConfig()
+			if e != nil {
+				err = e
+				break
+			}
+			c.Limits = *q.Limits
+			if err = c.Validate(); err == nil {
+				err = s.SaveConfig(&c)
+				if err == nil {
+					s.Limits = c.Limits
+				}
+			}
 		case "hello":
 			res.Root = s.Root
 		case "upload":
