@@ -21,6 +21,8 @@ Tailscale + SSH + Zellij + 터미널 코딩 에이전트를 사용하는 환경�
 
 전체 앱의 저전력 동작은 아직 검증하지 않았습니다. [타당성 검토](docs/feasibility.md), [동작 설계](docs/design.md), [개발 순서](docs/roadmap.md)에 판단과 남은 실험을 기록했습니다.
 
+완료 알림·앱 시작 방식·서버 등록·최근 이미지·메뉴바 정보량·보관 기간의 추가 선택지는 [UX 옵션](docs/ux-options.md)에 정리했습니다. 해당 추천안은 사용자 선택 전입니다.
+
 ## 비용 측정 실험
 
 macOS와 Xcode Command Line Tools가 필요합니다. 외부 패키지는 없습니다.
