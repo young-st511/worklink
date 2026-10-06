@@ -169,6 +169,25 @@ func nativeSelfTest() throws {
   )
   try require(failedReply, "stopped core did not invoke failure cleanup callback")
   bridge.stop()
+  let fixedSize = NSSize(width: 380, height: 460)
+  let panel = DashboardController()
+  var crowded = fixtureState()
+  crowded.config.ports = Array(repeating: crowded.config.ports[0], count: 12)
+  var stoppedWithJobs = fixtureState()
+  stoppedWithJobs.on = false
+  for state in [fixtureState(on: false), fixtureState(), stoppedWithJobs, crowded] {
+    panel.render(state)
+    try require(
+      panel.view.frame.size == fixedSize && panel.preferredContentSize == fixedSize,
+      "popover changed height on state transition")
+    try require(
+      panel.headerFrame.maxY <= fixedSize.height && panel.footerFrame.minY >= 0,
+      "pinned controls clipped")
+  }
+  panel.bodyScroll?.contentView.scroll(to: NSPoint(x: 0, y: 120))
+  panel.resetScroll()
+  try require(
+    panel.bodyScroll?.contentView.bounds.origin.y == 0, "reopened menu did not reset to top")
   print(
     "Native clipboard/counter/OFF/format/Unicode URL/lock overlap/ready state/EOF tests passed.")
 }

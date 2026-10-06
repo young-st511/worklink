@@ -24,3 +24,5 @@ S1–S5 구현: `internal/address.Parse`, `model.Config.Validate`, `storage.Stor
 S6–S9 및 S3 로컬 ACK 후 삭제 구현: `transport.Connect/SSH.Call/Forward/Close`, `engine.Engine/ServeUI`, CLI `sendImage`. 원본 SHA-256·실제 SSH IPv4/IPv6 터널·제목·경로 재복사·OFF 종료, 취소·ACK 저장 실패·restart 회복·원래 대상 retry·queue orphan 한도 테스트와 양쪽 재리뷰 통과.
 
 S10–S14 구현: `macos/AppDelegate`, `DashboardController`, `SettingsController`, `ClipboardReader`, `CoreBridge`, `install.CleanupPlist/CleanupJob/Remote`, `scripts/build-app.sh`. Go race/vet, native 회귀 테스트, 실제 SSH+named pasteboard 원본 PNG·경로 교체 및 AppKit 밝은/어두운/OFF/오류/설정 뷰 렌더 확인. 실제 마우스·브라우저 열기·권한·자동 시작·일일 작업 활성화는 환경 검증으로 남았으며 validation.md에 구분했습니다.
+
+S10 팝업 레이아웃은 380×460 point로 고정하고 header/footer를 목록 스크롤 밖에 유지합니다. `DashboardController.render/resetScroll`, `AppDelegate.showMenu`와 native 회귀 테스트로 상태 전환·재열기 잘림을 보완했습니다.

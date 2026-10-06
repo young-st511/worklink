@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item.button?.action = #selector(statusClicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     popover.contentViewController = dashboard
+    popover.contentSize = DashboardController.panelSize
     popover.behavior = .transient
     dashboard.clipboardCount = { [weak self] in self?.clipboardBoard.changeCount ?? 0 }
     dashboard.toggle = { [weak self] in self?.toggle() }
@@ -104,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
     if let state = bridge.state { dashboard.render(state) }
+    dashboard.resetScroll()
+    popover.contentSize = DashboardController.panelSize
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
   }
   func toggle() {

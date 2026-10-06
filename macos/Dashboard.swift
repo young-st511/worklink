@@ -1,6 +1,17 @@
 import AppKit
 
 final class DashboardController: NSViewController {
+  static let panelSize = NSSize(width: 380, height: 460)
+  private(set) var bodyScroll: NSScrollView?
+  private var pinnedHeader: NSView?
+  private var pinnedFooter: NSView?
+  var headerFrame: NSRect { pinnedHeader?.frame ?? .zero }
+  var footerFrame: NSRect { pinnedFooter?.frame ?? .zero }
+  func resetScroll() {
+    bodyScroll?.contentView.scroll(to: .zero)
+    if let bodyScroll { bodyScroll.reflectScrolledClipView(bodyScroll.contentView) }
+  }
+
   var toggle: (() -> Void)?
   var settings: (() -> Void)?
   var quit: (() -> Void)?
@@ -16,7 +27,7 @@ final class DashboardController: NSViewController {
   var expanded: Set<String> = []
   private var lastState: CoreState?
   override func loadView() {
-    view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 200))
+    view = NSView(frame: NSRect(origin: .zero, size: Self.panelSize))
     view.wantsLayer = true
   }
   func render(_ state: CoreState) {
@@ -26,15 +37,18 @@ final class DashboardController: NSViewController {
       copied.removeAll()
       self.copiedCount = nil
     }
+    let scrollOffset = bodyScroll?.contentView.bounds.origin.y ?? 0
     view.subviews.forEach { $0.removeFromSuperview() }
     let title = label("Worklink", size: 16, bold: true)
     let status = label(state.on ? "업무 ON" : "업무 OFF", size: 11, color: .secondaryLabelColor)
-    var sections: [NSView] = [
-      horizontal([title, status]),
-      label(
-        state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11,
-        color: .secondaryLabelColor),
-    ]
+    let header = vertical(
+      [
+        horizontal([title, status]),
+        label(
+          state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11,
+          color: .secondaryLabelColor),
+      ], spacing: 10)
+    var sections: [NSView] = []
     if !notice.isEmpty {
       sections.append(
         label(
@@ -150,32 +164,57 @@ final class DashboardController: NSViewController {
       }
       sections.append(vertical(row, spacing: 2))
     }
-    sections.append(separator())
-    sections.append(
-      horizontal([
-        ActionButton(state.on ? "업무 종료" : "업무 시작") { [weak self] in self?.toggle?() },
-        ActionButton("설정…") { [weak self] in self?.settings?() },
-        ActionButton("종료") { [weak self] in self?.quit?() },
-      ]))
+    let footer = vertical(
+      [
+        separator(),
+        horizontal([
+          ActionButton(state.on ? "업무 종료" : "업무 시작") { [weak self] in self?.toggle?() },
+          ActionButton("설정…") { [weak self] in self?.settings?() },
+          ActionButton("종료") { [weak self] in self?.quit?() },
+        ]),
+      ], spacing: 10)
     let stack = vertical(sections, spacing: 10)
     stack.translatesAutoresizingMaskIntoConstraints = false
-    let content = FlippedView(frame: NSRect(x: 0, y: 0, width: 380, height: 600))
+    let content = FlippedView(frame: NSRect(x: 0, y: 0, width: 380, height: 400))
     content.addSubview(stack)
     NSLayoutConstraint.activate([
       stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
-      stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 16),
+      stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
       stack.widthAnchor.constraint(equalToConstant: 344),
     ])
     content.layoutSubtreeIfNeeded()
-    let height = max(160, stack.fittingSize.height + 32)
+    let height = max(40, stack.fittingSize.height + 16)
     content.setFrameSize(NSSize(width: 380, height: height))
-    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 380, height: min(height, 620)))
-    scroll.hasVerticalScroller = height > 620
+    let scroll = NSScrollView()
+    scroll.hasVerticalScroller = true
+    scroll.autohidesScrollers = true
     scroll.drawsBackground = false
     scroll.documentView = content
-    view.setFrameSize(scroll.frame.size)
-    view.addSubview(scroll)
-    preferredContentSize = view.frame.size
+    for child in [header, scroll, footer] {
+      child.translatesAutoresizingMaskIntoConstraints = false
+      view.addSubview(child)
+    }
+    NSLayoutConstraint.activate([
+      header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+      header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+      header.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+      footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
+      footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
+      footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+      scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 12),
+      scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
+    ])
+    bodyScroll = scroll
+    pinnedHeader = header
+    pinnedFooter = footer
+    view.setFrameSize(Self.panelSize)
+    preferredContentSize = Self.panelSize
+    view.layoutSubtreeIfNeeded()
+    let offset = min(scrollOffset, max(0, height - scroll.contentSize.height))
+    scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
+    scroll.reflectScrolledClipView(scroll.contentView)
     view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
   }
 }
