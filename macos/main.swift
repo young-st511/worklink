@@ -155,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       systemSymbolName: symbol, accessibilityDescription: "Worklink \(desiredOn ? "ON" : "OFF")")
     image?.isTemplate = true
     item.button?.image = image
-    item.button?.alphaValue = desiredOn ? 1 : 0.42
+    item.button?.alphaValue = desiredOn ? 1 : 0.65
     item.button?.toolTip =
       "Worklink · \(suspended ? "잠금/절전 일시 정지" : desiredOn ? "업무 ON" : "업무 OFF") · 좌클릭 목록 / 우클릭 전환"
   }
