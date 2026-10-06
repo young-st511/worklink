@@ -33,3 +33,9 @@ S10 팝업 레이아웃은 380×460 point로 고정하고 header/footer를 목�
 - S16: 최근 완료 이미지의 `원본 복사`는 두 모드에서 원격 원본을 요청 시에만 가져와 동일 형식/byte로 클립보드에 기록. 새 내용·OFF·잠금·generation 변경 시 덮어쓰기 금지. 앱이 기록한 원본은 재업로드하지 않음. 만료/연결 오류 표시, 임시 다운로드 제거, 장기 로컬 복사본 없음. 명시적 경로 복사도 유지.
 
 S15/S16 구현: `ClipboardPreferences.complete`, `AppDelegate.complete/copy/restore`, `DashboardController.render`, `Engine.RestoreOriginal`, `SSH.Download`, `remote.Serve(download)`. 다운로드는 기존 SSH master를 사용하는 요청별 임시 채널로 제어/업로드 RPC를 점유하지 않습니다. 원본 복사 후 lastCount 갱신으로 재전송을 막고 복사 뒤 scratch를 삭제합니다. 검증 결과는 validation.md에 기록합니다.
+
+## macOS 앱 아이콘
+
+- S17: Worklink 연결 모티프의 macOS 앱 아이콘을 Icon Composer 벡터 레이어와 실제 Liquid Glass 재질로 제작. 밝은/어두운/mono appearance 렌더 확인, 앱 번들 아이콘 등록·Assets.car·이전 macOS용 icns 포함. 기존 14 이상 런타임과 메뉴바 ON/OFF 아이콘은 유지.
+
+S17 구현: `assets/Worklink.icon`, `scripts/build-icon.sh/build-legacy-icon.sh/render-icon.sh`, `build-app.sh` Info.plist 병합. native asset catalog의 IconImageStack 및 Aqua/DarkAqua/Tintable appearances, SVG vector layers와 고해상도 icon을 `verify-app-icon.py`로 확인합니다. native self-test는 icns decode 및 1024px 표현을 확인합니다.

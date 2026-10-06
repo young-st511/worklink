@@ -23,5 +23,7 @@ cat > "$app_dir/Contents/Info.plist" <<'PLIST'
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
+sh scripts/build-icon.sh "$app_dir/Contents/Resources"
+/usr/libexec/PlistBuddy -c "Merge .build/icon-info.plist" "$app_dir/Contents/Info.plist"
 codesign --force --deep --sign - "$app_dir"
 printf '%s\n' "$app_dir"

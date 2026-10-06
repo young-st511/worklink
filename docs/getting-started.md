@@ -1,6 +1,6 @@
 # 설치와 사용
 
-대상: 두 Mac 모두 macOS 14 이상. 빌드하는 Mac에는 Go 1.24 이상과 Xcode Command Line Tools가 필요합니다. 앱은 현재 Mac CPU용으로 빌드하며 원격 헬퍼는 arm64·amd64 둘 다 포함합니다. 외부 Go/Swift 패키지는 없습니다.
+대상: 두 Mac 모두 macOS 14 이상. 빌드하는 Mac에는 Go 1.24 이상과 Xcode Command Line Tools가 필요합니다. 앱은 현재 Mac CPU용으로 빌드하며 원격 헬퍼는 arm64·amd64 둘 다 포함합니다. 외부 Go/Swift 패키지는 없습니다. Xcode 26 이상이면 Icon Composer 원본을 native Liquid Glass 아이콘으로 컴파일합니다. 이전 도구에서는 포함된 icns로 같은 디자인을 사용합니다. 앱 실행 최소 버전은 14를 유지합니다.
 
 ## 로컬 Mac에 앱 설치
 
@@ -66,6 +66,8 @@ CLI의 원본 저장과 이미지 해석은 별도입니다. Codex 공식 문서
 ```sh
 make test
 make previews
+make icon-previews
+python3 scripts/verify-app-icon.py
 WORKLINK_DEV=1 .build/Worklink.app/Contents/MacOS/Worklink --dev
 WORKLINK_TEST_SSH_HOST=office-mac python3 scripts/ssh-integration.py
 WORKLINK_TEST_SSH_HOST=office-mac WORKLINK_QA_NATIVE=1 python3 scripts/ssh-integration.py

@@ -1,4 +1,4 @@
-.PHONY: probe clean build app test previews
+.PHONY: probe clean build app test previews icon-previews
 
 build:
 	mkdir -p .build
@@ -14,6 +14,9 @@ test:
 previews: app
 	.build/Worklink.app/Contents/MacOS/Worklink --self-test
 	.build/Worklink.app/Contents/MacOS/Worklink --render-previews .build/previews
+
+icon-previews:
+	sh scripts/render-icon.sh
 
 probe: .build/clipboard-cost
 

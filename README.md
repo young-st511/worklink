@@ -6,6 +6,8 @@ Tailscale + SSH + Zellij + 터미널 코딩 에이전트를 사용하는 환경�
 
 **현재 상태: Go 코어 + AppKit 메뉴바 앱 구현, 실제 SSH·원본 전송·네이티브 클립보드 경로 복사와 AppKit 뷰 렌더 검증.**
 
+아이콘은 연결 모티프의 native Liquid Glass 레이어를 사용하며 [아이콘 원본과 제작 안내](assets/README.md)를 포함합니다.
+
 빌드는 `make app`, 설치·사용 방법은 [시작 안내](docs/getting-started.md), 검증 결과와 한계는 [검증 기록](docs/validation.md)을 참고해 주세요.
 
 ## 검토 결론

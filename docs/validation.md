@@ -54,3 +54,17 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - 실제 AppKit 밝은/어두운 원본 유지/자동 경로/최근 5개 목록 뷰를 렌더·시각 확인했습니다. 고정 380×460 point와 pinned header/footer·재열기 reset 회귀 테스트도 통과했습니다. 길어진 목록만 스크롤합니다.
 - 로컬 설치 번들은 atomic 교체 후 codesign 검증과 빌드 바이너리 hash 일치 확인을 완료했습니다. 등록된 원격 헬퍼도 갱신했습니다. 운영 preferences·SSH 설정·이미지·포트 등록 정보는 repo에 저장하지 않았습니다.
 - 실제 메뉴 클릭/재열기는 CUA의 Worklink 접근 거부 때문에 자동 조작으로 검증하지 못했고 이를 다른 UI 자동화로 우회하지 않았습니다. 실행 중 제품 앱도 자동 재시작하지 않았으므로 메뉴에서 종료 후 재실행해야 새 UI가 적용됩니다. GitHub 생성/push/배포 없음.
+
+## Liquid Glass 앱 아이콘
+
+2026-10-06 Worklink 앱 아이콘을 자체 SVG 연결 고리 2개와 Icon Composer 레이어로 제작했습니다. Apple 공식 제작 안내·Xcode macOS 기본 .icon 템플릿·공식 Landmarks 예제의 문서 구조를 참고했으며 샘플 아트워크는 사용하지 않았습니다. 실제 제작 파일과 재생성 방법은 assets/README.md에 기록했습니다.
+
+- Xcode 27.0, macOS 27.0.1의 Apple actool/ictool/iconutil로 컴파일·렌더했습니다. native app icon 등록 검사를 먼저 추가해 기존 번들의 미등록 실패를 확인했습니다.
+- native Assets.car의 실제 SVG Vector 2개, Aqua/DarkAqua/Tintable IconImageStack 3개와 1024px 아이콘을 assetutil로 확인했습니다. `verify-app-icon.py`가 번들 CFBundleIconName/File 등록과 실제 compiled artifact를 검사합니다.
+- AppKit NSImage 및 ImageIO로 icns 로딩·고해상도 표현을 확인합니다. actool이 만든 icns stub은 16/128 point만 포함하므로, 별도로 Apple renderer에서 16/32/128/256/512 point의 1x/2x 표현 10개를 생성해 iconutil로 패키징했습니다. 앱에는 이 완전한 icns를 포함합니다.
+- Default/Dark/ClearLight/ClearDark/TintedLight/TintedDark 및 16/32/64 point의 실제 Apple renderer 결과를 생성하고 기본·다크·투명·틴트·작은 크기를 열어 시각 확인했습니다.
+- legacy 강제 빌드 후 native 빌드로 전환하는 두 실제 빌드 경로에서 native self-test와 아이콘 검사를 통과했습니다. stale Assets.car와 아이콘 메타데이터 제거를 확인했습니다. Go race/test/vet 및 shell syntax 검사도 통과했습니다.
+- macOS 14 최소 타깃과 fallback 구성·icns 리소스를 확인한 것이며 실제 macOS 14 머신 실행을 검증한 것은 아닙니다. 메뉴바 ON/OFF 아이콘과 앱 업무 동작은 변경하지 않았습니다.
+- CUA에서 Icon Composer 접근이 거부되어 화면 조작 대신 Apple CLI 컴파일/렌더를 사용했습니다. 제품 앱의 실제 Finder/Dock 표시·외형 모드 전환·아이콘 캐시 갱신은 자동 UI 조작으로 검증하지 않았습니다.
+
+두 병렬 스펙/코드 리뷰 추가 blocker 없음. 코드 리뷰어가 별도 legacy 번들·공백을 포함한 리소스 경로·stale catalog 제거·서명 전 실패 중단을 확인했습니다. 설치된 앱은 atomic 교체 후 코드 서명·Info.plist/Assets.car/icns/실행 파일 hash 및 native 아이콘 등록 검증을 통과했습니다. 사용자 설정/전송 데이터/원격 헬퍼는 변경하지 않았으며 실행 중 제품 앱의 자동 재시작도 수행하지 않았습니다.

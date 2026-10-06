@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 
 func fixtureState(on: Bool = true) -> CoreState {
   let host = HostConfig(name: "office-test", helper: "~/.local/bin/worklink")
@@ -99,6 +100,32 @@ func nativeSelfTest() throws {
       throw NSError(domain: "Worklink QA", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
   }
+  if Bundle.main.url(forResource: "Assets", withExtension: "car") != nil {
+    try require(
+      Bundle.main.object(forInfoDictionaryKey: "CFBundleIconName") as? String == "Worklink",
+      "layered app icon is not registered")
+  }
+  try require(
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "Worklink",
+    "app icon is not registered")
+  guard let iconURL = Bundle.main.url(forResource: "Worklink", withExtension: "icns"),
+    let icon = NSImage(contentsOf: iconURL)
+  else {
+    throw NSError(
+      domain: "Worklink QA", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "legacy app icon missing or unreadable"])
+  }
+  try require(icon.size.width > 0, "app icon has no drawable size")
+  guard let source = CGImageSourceCreateWithURL(iconURL as CFURL, nil) else {
+    throw NSError(
+      domain: "Worklink QA", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "icns image source cannot be decoded"])
+  }
+  let widths = (0..<CGImageSourceGetCount(source)).compactMap { index -> Int? in
+    let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+    return properties?[kCGImagePropertyPixelWidth] as? Int
+  }
+  try require(widths.contains { $0 >= 1024 }, "app icon lacks high-resolution representation")
   let board = NSPasteboard(name: NSPasteboard.Name("dev.worklink.qa.\(UUID().uuidString)"))
   defer { board.releaseGlobally() }
   let original = Data([0, 255, 1, 2, 3, 128])
