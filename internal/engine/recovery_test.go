@@ -94,9 +94,13 @@ func TestRetryUsesOriginalHostAfterSelectionChange(t *testing.T) {
 	root := t.TempDir()
 	e := configured(t, root)
 	remoteStore, _ := storage.Open(t.TempDir(), model.DefaultConfig().Limits)
-	connected := make(chan string, 10)
+	completed := make(chan Job, 1)
+	e.emit = func(event Event) {
+		if event.Kind == "upload_complete" && event.Job != nil {
+			completed <- *event.Job
+		}
+	}
 	e.connect = func(ctx context.Context, h model.Host) (transport.Connection, error) {
-		connected <- h.Name
 		return &localConnection{remoteStore}, nil
 	}
 	e.state.On = true
@@ -118,15 +122,12 @@ func TestRetryUsesOriginalHostAfterSelectionChange(t *testing.T) {
 	if err = e.Retry(j.ID); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.After(3 * time.Second)
-	for {
-		select {
-		case h := <-connected:
-			if h == "old" {
-				return
-			}
-		case <-deadline:
-			t.Fatal("did not connect to original target")
+	select {
+	case done := <-completed:
+		if done.Host != "old" || done.ID != j.ID {
+			t.Fatal("retry changed target", done)
 		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("did not complete retry on original target")
 	}
 }

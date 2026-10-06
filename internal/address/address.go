@@ -26,6 +26,26 @@ func (e Endpoint) LocalURL(port int) string {
 }
 func (e Endpoint) Address() string { return net.JoinHostPort(e.RemoteHost, strconv.Itoa(e.RemotePort)) }
 
+// Candidates stays within the registered port's loopback scope, in preferred order.
+func (e Endpoint) Candidates() []string {
+	switch e.RemoteHost {
+	case "127.0.0.1", "localhost":
+		return []string{"127.0.0.1", "::1"}
+	case "::1":
+		return []string{"::1", "127.0.0.1"}
+	default:
+		return []string{e.RemoteHost}
+	}
+}
+func (e Endpoint) AllowsTarget(target string) bool {
+	for _, host := range e.Candidates() {
+		if host == target {
+			return true
+		}
+	}
+	return false
+}
+
 type Result struct {
 	Endpoint   Endpoint `json:"endpoint"`
 	Error      string   `json:"error,omitempty"`

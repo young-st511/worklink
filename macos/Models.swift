@@ -77,6 +77,7 @@ struct PortStatus: Codable {
   var status: String
   var error: String?
   var reachable: Bool
+  var remoteHost: String? = nil
 }
 struct ImageJob: Codable {
   var id: String

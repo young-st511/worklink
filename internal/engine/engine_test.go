@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/young-st511/worklink/internal/address"
 	"github.com/young-st511/worklink/internal/model"
 	"github.com/young-st511/worklink/internal/remote"
 	"github.com/young-st511/worklink/internal/storage"
@@ -162,5 +163,98 @@ func TestQueuedCaptureWaitsForFailedConnection(t *testing.T) {
 	e.sendNext(context.Background(), 1)
 	if e.Snapshot().Jobs[0].Status != "queued" {
 		t.Fatal("disconnected capture no longer queued")
+	}
+}
+
+type familyConnection struct {
+	target      string
+	cancelError bool
+	forwards    []model.Port
+	removes     []bool
+}
+
+func (f *familyConnection) Close() {}
+func (f *familyConnection) Forward(_ context.Context, p model.Port, remove bool) error {
+	f.forwards = append(f.forwards, p)
+	f.removes = append(f.removes, remove)
+	if remove && f.cancelError {
+		return fmt.Errorf("cancel failed")
+	}
+	return nil
+}
+func (f *familyConnection) Call(_ context.Context, q remote.Request, _ io.Reader) (remote.Response, error) {
+	r := remote.Response{Checks: map[string]bool{}, Targets: map[string]string{}}
+	for id := range q.Endpoints {
+		r.Checks[id] = true
+		r.Targets[id] = f.target
+	}
+	return r, nil
+}
+func TestForwardFollowsResolvedFamily(t *testing.T) {
+	conn := &familyConnection{target: "::1"}
+	e, err := New(t.TempDir(), nil, func(Event) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := model.DefaultConfig()
+	c.Hosts = []model.Host{{Name: "test", Helper: "/tmp/helper"}}
+	c.Ports = []model.Port{{ID: model.NewID(), Host: "test", Enabled: true, LocalPort: 4000, Endpoint: address.Endpoint{Scheme: "http", RemoteHost: "127.0.0.1", RemotePort: 4000, Path: "/"}}}
+	e.state.Config = c
+	e.state.On = true
+	e.state.Generation = 1
+	e.peers["test"] = &peer{connection: conn, forwarded: map[string]bool{}}
+	e.cycle(context.Background(), 1)
+	if len(conn.forwards) != 1 || conn.forwards[0].Endpoint.RemoteHost != "::1" || e.Snapshot().Ports[0].RemoteHost != "::1" {
+		t.Fatal("forward/check target differs", conn.forwards, e.Snapshot())
+	}
+	conn.target = "127.0.0.1"
+	e.cycle(context.Background(), 1)
+	if len(conn.forwards) != 3 || !conn.removes[1] || conn.forwards[1].Endpoint.RemoteHost != "::1" || conn.removes[2] || conn.forwards[2].Endpoint.RemoteHost != "127.0.0.1" {
+		t.Fatal("family change did not retarget owned forward", conn)
+	}
+}
+
+func TestRejectNonLoopbackResolvedTarget(t *testing.T) {
+	conn := &familyConnection{target: "192.0.2.1"}
+	e, _ := New(t.TempDir(), nil, func(Event) {})
+	c := model.DefaultConfig()
+	c.Hosts = []model.Host{{Name: "test", Helper: "/tmp/helper"}}
+	c.Ports = []model.Port{{ID: model.NewID(), Host: "test", Enabled: true, LocalPort: 4000, Endpoint: address.Parse("4000").Endpoint}}
+	e.state.Config = c
+	e.state.On = true
+	e.state.Generation = 1
+	e.peers["test"] = &peer{connection: conn, forwarded: map[string]bool{}}
+	e.cycle(context.Background(), 1)
+	if len(conn.forwards) != 0 {
+		t.Fatal("forwarded an unregistered target", conn.forwards)
+	}
+	e.state.On = false
+	e.portStatus(1, c.Ports[0].ID, "ready", "", true, "::1")
+	if len(e.Snapshot().Ports) != 0 {
+		t.Fatal("OFF accepted stale port status")
+	}
+}
+
+func TestRetargetFailureInvalidatesReadyAndPublishes(t *testing.T) {
+	conn := &familyConnection{target: "::1"}
+	published := false
+	e, _ := New(t.TempDir(), nil, func(event Event) {
+		if event.State != nil && len(event.State.Ports) > 0 && !event.State.Ports[0].Reachable {
+			published = true
+		}
+	})
+	c := model.DefaultConfig()
+	c.Hosts = []model.Host{{Name: "test", Helper: "/tmp/helper"}}
+	c.Ports = []model.Port{{ID: model.NewID(), Host: "test", Enabled: true, LocalPort: 4000, Endpoint: address.Parse("4000").Endpoint}}
+	e.state.Config = c
+	e.state.On = true
+	e.state.Generation = 1
+	e.peers["test"] = &peer{connection: conn, forwarded: map[string]bool{}}
+	e.cycle(context.Background(), 1)
+	conn.target = "127.0.0.1"
+	conn.cancelError = true
+	e.cycle(context.Background(), 1)
+	if state := e.Snapshot(); state.Ports[0].Reachable || state.Ports[0].Status == "ready" || !published {
+		t.Fatal("failed tunnel remained ready or not published", state, published)
 	}
 }

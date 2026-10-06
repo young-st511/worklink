@@ -118,3 +118,18 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - 실제 시스템 외형/제품 popup mouse와 hover는 CUA 접근 거부로 미검증이며 우회하지 않았습니다. backend/SSH/원본 처리 코드는 변경하지 않았습니다.
 
 `/Applications`의 기존 설치를 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·전송 데이터는 변경하지 않았고 제품 앱 자동 재시작/GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.
+
+## 등록 포트 dual loopback
+
+2026-10-07 IPv6-only listener가 IPv4 등록에서 대기로 표시되는 사용자 사례를 해결했습니다. 등록 literal을 우선하고 실패 시 127.0.0.1/::1 중 다른 family를 확인합니다. 그 외 loopback은 지정 IP만 사용합니다. registered port당 최대 2회/각400ms, worker2로 제한하며 전체 listener 검색은 하지 않습니다. Targets/CheckErrors 응답은 optional로 추가하고 old-helper bool 응답은 기존 주소로 처리합니다.
+
+check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 forward를 취소/재등록합니다. waiting은 마지막 target을 유지합니다. 실제 주소를 native 상세에 IPv6 bracket 형식으로 표시합니다. 기존 설정/ID는 바꾸지 않습니다.
+
+- Spec-first Go 테스트의 Targets/RemoteHost 미구현 실패 확인 후 구현. IPv4-only·IPv6-only·동시 listener preferred 순서, 실제 forward/cancel target, non-loopback 응답 거부, OFF/stale generation 상태 보호 검사 및 race/vet 통과.
+- 실제 SSH 임시 HTTP fixture에서 IPv4→IPv6→IPv4 전환과 양쪽 local loopback·제목·원본 SHA·ACK 이후 큐 삭제·원본 다운로드를 확인했습니다. native named clipboard 두 모드에서 원본 유지/경로/원본 복사/no-reupload/scratch cleanup도 재검증 통과.
+- 두 리뷰에서 retarget 취소 실패 시 오래된 ready가 남는 문제를 발견했습니다. 현재 peer/on guard 아래 해당 host의 포트를 waiting/reachable=false로 무효화하고 즉시 publish하도록 수정했습니다. retarget 실패 회귀 및 리뷰어의 이전 peer/OFF overlay 검증 통과, 추가 제품 blocker 없음.
+- 반복 race 검증에서 기존 retry 테스트가 연결 호출만 기다려 Receive와 TempDir cleanup이 겹치는 경합을 발견해 실제 upload_complete/같은 ID·원래 host를 기다리게 강화했습니다. engine/remote race5회 및 vet 통과.
+- 원격 helper를 갱신한 뒤 실제 운영 4000을 별도 임시 local port로 연결했습니다. 당시 실제 선택 주소는 127.0.0.1이었으며 양쪽 local loopback HTTP 응답을 확인했습니다. 앞선 IPv6-only 원인은 별도 fixture와 초기 listener 진단으로 구분하며, 운영 서버를 재시작하거나 설정을 변경하지 않았습니다.
+- native 회귀/아이콘 검증 통과. 실제 popup mouse/hover는 CUA 거부로 미검증이며 우회하지 않았습니다.
+
+/Applications 앱도 atomic 교체하고 서명·빌드 hash·공개 소스 검수를 통과했습니다. 제품 앱을 자동 재시작하지 않았으며 로컬 Git만 사용했습니다.

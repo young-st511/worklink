@@ -34,10 +34,11 @@ type HostState struct {
 	Error  string `json:"error,omitempty"`
 }
 type PortState struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"`
-	Error     string `json:"error,omitempty"`
-	Reachable bool   `json:"reachable"`
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
+	Reachable  bool   `json:"reachable"`
+	RemoteHost string `json:"remote_host,omitempty"`
 }
 type State struct {
 	On         bool         `json:"on"`
@@ -62,6 +63,7 @@ type peer struct {
 	mu         sync.Mutex
 	connection transport.Connection
 	forwarded  map[string]bool
+	targets    map[string]string
 	attempt    int
 	next       time.Time
 	blocked    bool
@@ -318,17 +320,22 @@ func (e *Engine) hostStatus(host, status, message string) {
 	}
 	e.state.Hosts = append(e.state.Hosts, HostState{host, status, message})
 }
-func (e *Engine) portStatus(id, status, message string, reachable bool) {
+func (e *Engine) portStatus(gen uint64, id, status, message string, reachable bool, host string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if !e.state.On || e.state.Generation != gen {
+		return
+	}
+	value := PortState{ID: id, Status: status, Error: message, Reachable: reachable, RemoteHost: host}
 	for n, p := range e.state.Ports {
 		if p.ID == id {
-			e.state.Ports[n] = PortState{id, status, message, reachable}
+			e.state.Ports[n] = value
 			return
 		}
 	}
-	e.state.Ports = append(e.state.Ports, PortState{id, status, message, reachable})
+	e.state.Ports = append(e.state.Ports, value)
 }
+
 func (e *Engine) current(gen uint64) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -421,20 +428,9 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 		}
 		endpoints := map[string]address.Endpoint{}
 		for _, port := range snap.Config.Ports {
-			if port.Host != h.Name || !port.Enabled {
-				continue
+			if port.Host == h.Name && port.Enabled {
+				endpoints[port.ID] = port.Endpoint
 			}
-			if !p.forwarded[port.ID] {
-				forwardCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-				err := p.conn().Forward(forwardCtx, port, false)
-				cancel()
-				if err != nil {
-					e.portStatus(port.ID, "conflict", err.Error(), false)
-					continue
-				}
-				p.forwarded[port.ID] = true
-			}
-			endpoints[port.ID] = port.Endpoint
 		}
 		checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		r, err := p.conn().Call(checkCtx, remote.Request{Op: "check", Endpoints: endpoints}, nil)
@@ -446,12 +442,68 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			e.failedPeer(h.Name, p, err)
 			continue
 		}
-		for id, ready := range r.Checks {
+		if p.targets == nil {
+			p.targets = map[string]string{}
+		}
+		for _, port := range snap.Config.Ports {
+			if port.Host != h.Name || !port.Enabled {
+				continue
+			}
+			if !e.current(gen) {
+				return
+			}
+			ready := r.Checks[port.ID]
+			target := port.Endpoint.RemoteHost
+			if resolved := r.Targets[port.ID]; resolved != "" {
+				if !port.Endpoint.AllowsTarget(resolved) {
+					e.failedPeer(h.Name, p, errors.New("원격 연결 주소가 등록 범위를 벗어났습니다"))
+					return
+				}
+				target = resolved
+			} else if !ready && p.forwarded[port.ID] && p.targets[port.ID] != "" {
+				target = p.targets[port.ID]
+			}
+			conn := p.conn()
+			if conn == nil {
+				return
+			}
+			if p.forwarded[port.ID] && p.targets[port.ID] != target {
+				previous := port
+				previous.Endpoint.RemoteHost = p.targets[port.ID]
+				forwardCtx, done := context.WithTimeout(ctx, 5*time.Second)
+				problem := conn.Forward(forwardCtx, previous, true)
+				done()
+				if !e.current(gen) {
+					return
+				}
+				if problem != nil {
+					e.failedPeer(h.Name, p, problem)
+					return
+				}
+				delete(p.forwarded, port.ID)
+				delete(p.targets, port.ID)
+			}
+			selected := port
+			selected.Endpoint.RemoteHost = target
+			if !p.forwarded[port.ID] {
+				forwardCtx, done := context.WithTimeout(ctx, 5*time.Second)
+				problem := conn.Forward(forwardCtx, selected, false)
+				done()
+				if !e.current(gen) {
+					return
+				}
+				if problem != nil {
+					e.portStatus(gen, port.ID, "conflict", problem.Error(), false, target)
+					continue
+				}
+				p.forwarded[port.ID] = true
+				p.targets[port.ID] = target
+			}
 			status := "waiting"
 			if ready {
 				status = "ready"
 			}
-			e.portStatus(id, status, "", ready)
+			e.portStatus(gen, port.ID, status, r.CheckErrors[port.ID], ready, target)
 		}
 	}
 	if e.current(gen) {
@@ -467,6 +519,7 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 	}
 	p.setConn(nil)
 	p.forwarded = map[string]bool{}
+	p.targets = map[string]string{}
 	p.attempt++
 	delay := time.Second << min(p.attempt-1, 6)
 	if delay > 60*time.Second {
@@ -483,7 +536,35 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 	if p.blocked {
 		status = "blocked"
 	}
-	e.hostStatus(host, status, message)
+	e.mu.Lock()
+	current := e.state.On && e.peers[host] == p
+	if current {
+		found := false
+		for n, h := range e.state.Hosts {
+			if h.Host == host {
+				e.state.Hosts[n] = HostState{host, status, message}
+				found = true
+				break
+			}
+		}
+		if !found {
+			e.state.Hosts = append(e.state.Hosts, HostState{host, status, message})
+		}
+		for n, portState := range e.state.Ports {
+			for _, port := range e.state.Config.Ports {
+				if port.ID == portState.ID && port.Host == host {
+					e.state.Ports[n].Status = "waiting"
+					e.state.Ports[n].Reachable = false
+					e.state.Ports[n].Error = message
+					break
+				}
+			}
+		}
+	}
+	e.mu.Unlock()
+	if current {
+		e.publish()
+	}
 }
 func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 	e.mu.Lock()

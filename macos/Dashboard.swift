@@ -429,10 +429,15 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     primary.widthAnchor.constraint(equalToConstant: 344).isActive = true
     primary.heightAnchor.constraint(equalToConstant: 24).isActive = true
     guard isExpanded else { return primary }
+    let actualHost = connection?.remoteHost ?? port.endpoint.remoteHost
+    let actualAddress =
+      actualHost.contains(":")
+      ? "[\(actualHost)]:\(port.endpoint.remotePort)" : "\(actualHost):\(port.endpoint.remotePort)"
     var rows: [NSView] = [
       primary, label(url, size: 10, color: .secondaryLabelColor),
       label(
-        "원격 \(port.host) / \(port.endpoint.remoteHost):\(port.endpoint.remotePort)", size: 10,
+        "원격 \(port.host) / \(actualAddress)",
+        size: 10,
         color: .secondaryLabelColor),
     ]
     if let error = connection?.error, !error.isEmpty {

@@ -32,15 +32,21 @@ try:
     subprocess.run(["/usr/bin/scp", "-q", str(binary), f"{host}:{remote_dir}/worklink"], check=True, timeout=30)
     wrapper = "#!/bin/sh\nexport WORKLINK_DATA_DIR=" + shlex.quote(remote_dir + "/data") + "\nexec " + shlex.quote(remote_dir + "/worklink") + ' "$@"\n'
     subprocess.run(ssh + [f"cat > {shlex.quote(remote_dir + '/helper')}; chmod 700 {shlex.quote(remote_dir + '/helper')}"], input=wrapper, text=True, check=True, timeout=10)
-    server = """import http.server,threading,sys
+    server = """import http.server,threading,sys,socket
 class H(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
   self.send_response(200);self.send_header('Content-Type','text/html');self.end_headers();self.wfile.write(b'<title>Worklink QA</title><p>remote tunnel verified</p>')
  def log_message(self,*a): pass
+class V6(http.server.ThreadingHTTPServer): address_family=socket.AF_INET6
 s=http.server.ThreadingHTTPServer(('127.0.0.1',0),H)
-threading.Thread(target=s.serve_forever,daemon=True).start()
-print(s.server_port,flush=True)
-sys.stdin.read();s.shutdown()
+port=s.server_port
+thread=threading.Thread(target=s.serve_forever,daemon=True);thread.start()
+print(port,flush=True)
+for family in sys.stdin:
+ s.shutdown();s.server_close();thread.join()
+ s=V6(('::1',port),H) if family.strip()=='v6' else http.server.ThreadingHTTPServer(('127.0.0.1',port),H)
+ thread=threading.Thread(target=s.serve_forever,daemon=True);thread.start()
+s.shutdown();s.server_close();thread.join()
 """
     subprocess.run(ssh + [f"cat > {shlex.quote(remote_dir + '/fixture.py')}"], input=server, text=True, check=True, timeout=10)
     fixture = subprocess.Popen(ssh + [f"python3 -u {shlex.quote(remote_dir + '/fixture.py')}"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -94,6 +100,10 @@ sys.stdin.read();s.shutdown()
                 if not chunk: break
                 response+=chunk
             assert b"remote tunnel verified" in response
+        for family, target in [("v6", "::1"), ("v4", "127.0.0.1")]:
+            fixture.stdin.write(family + "\n");fixture.stdin.flush()
+            wait(lambda e: e.get("state") and any(p["id"]==port_id and p["status"]=="ready" and p.get("remote_host")==target for p in e["state"]["ports"]))
+            assert b"remote tunnel verified" in urllib.request.urlopen(f"http://localhost:{local_port}/", timeout=5).read()
         send("title", port_id=port_id)
         wait(lambda e: e.get("id")=="title" and not e.get("error"))
         image = Path(root) / "original.png"
@@ -131,7 +141,7 @@ sys.stdin.read();s.shutdown()
                 assert result['manual_path_copied'] and result['original_restored'] and result['restore_no_reupload'] and result['scratch_removed'], result
                 assert result['sha256'] == hashlib.sha256(source_png.read_bytes()).hexdigest(), result
                 print(json.dumps(dict(native_app_pipeline=True, preserve_mode=preserve, original_png_sha256=True, manual_path_copy=True, original_restored=True, restore_no_reupload=True, scratch_removed=True)))
-        print(json.dumps(dict(real_ssh=True, tunnel_http=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, remote_original_download=True, off_shutdown=True)))
+        print(json.dumps(dict(real_ssh=True, tunnel_http=True, remote_family_switch=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, remote_original_download=True, off_shutdown=True)))
 finally:
     if app and app.poll() is None:
         app.terminate();app.wait(timeout=10)

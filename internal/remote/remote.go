@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -28,14 +29,16 @@ type Request struct {
 	Pinned    bool                        `json:"pinned,omitempty"`
 }
 type Response struct {
-	Version int             `json:"version"`
-	Error   string          `json:"error,omitempty"`
-	Image   *model.Image    `json:"image,omitempty"`
-	Images  []model.Image   `json:"images,omitempty"`
-	Checks  map[string]bool `json:"checks,omitempty"`
-	Removed []string        `json:"removed,omitempty"`
-	Exists  bool            `json:"exists,omitempty"`
-	Root    string          `json:"root,omitempty"`
+	Version     int               `json:"version"`
+	Error       string            `json:"error,omitempty"`
+	Image       *model.Image      `json:"image,omitempty"`
+	Images      []model.Image     `json:"images,omitempty"`
+	Checks      map[string]bool   `json:"checks,omitempty"`
+	Targets     map[string]string `json:"targets,omitempty"`
+	CheckErrors map[string]string `json:"check_errors,omitempty"`
+	Removed     []string          `json:"removed,omitempty"`
+	Exists      bool              `json:"exists,omitempty"`
+	Root        string            `json:"root,omitempty"`
 }
 
 func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
@@ -134,6 +137,8 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 				break
 			}
 			res.Checks = make(map[string]bool)
+			res.Targets = make(map[string]string)
+			res.CheckErrors = make(map[string]string)
 			var mu sync.Mutex
 			var wg sync.WaitGroup
 			sem := make(chan struct{}, 2)
@@ -148,14 +153,24 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
-					ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
-					defer cancel()
-					c, e := (&net.Dialer{}).DialContext(ctx, "tcp", ep.Address())
-					if e == nil {
-						c.Close()
+					target := ""
+					for _, host := range ep.Candidates() {
+						ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+						c, problem := (&net.Dialer{}).DialContext(ctx, "tcp", net.JoinHostPort(host, fmt.Sprint(ep.RemotePort)))
+						cancel()
+						if problem == nil {
+							c.Close()
+							target = host
+							break
+						}
 					}
 					mu.Lock()
-					res.Checks[id] = e == nil
+					res.Checks[id] = target != ""
+					if target != "" {
+						res.Targets[id] = target
+					} else {
+						res.CheckErrors[id] = "등록한 원격 포트의 loopback 주소에 연결할 수 없습니다. 서버 실행 상태를 확인해 주세요."
+					}
 					mu.Unlock()
 				}(id, ep)
 			}

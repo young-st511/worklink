@@ -67,3 +67,9 @@ S23 구현: `DashboardController.compactPortRow/render/quickForm`. 24 point 행/
 - S24: 제목·캡처 원본 유지 checkbox·눈에 띄는 업무 상태와 native ON/OFF switch를 한 줄에 배치합니다. 반복 안내 두 줄과 하단 중복 업무 버튼은 제거합니다. 기존 toggle callback/대상 미등록 안내/우클릭 전환·고정 팝업·원본 모드·빠른 등록/IME는 유지하고 설명은 tooltip/accessibility로 제공합니다.
 
 S24 구현: `DashboardController.render/toggleWork`, `MenuWorkSwitch.acceptsFirstMouse`. 28 point header의 한 줄 title/원본 checkbox/고대비 굵은 업무 label·상태점/native switch와 tooltip을 사용하고 기존 toggle callback을 호출합니다. native self-test는 동일 title row·switch state/action/첫 클릭 정책·접근성 및 중복 footer 제거를 확인합니다.
+
+## 등록 포트 IPv4/IPv6 자동 지원
+
+- S25: 기존 등록과 새 localhost/127.0.0.1/[::1] 포트는 등록 주소를 먼저 확인하고 실패 시 다른 loopback family를 확인합니다. 둘 다 열렸으면 등록 주소를 우선합니다. 등록한 포트만 확인하며 실제 확인된 literal 주소로 양쪽 로컬 loopback SSH forward를 연결합니다. 서버 family가 바뀌면 소유한 해당 forward만 취소/재등록하고 오류는 재연결합니다. 다른 loopback IP는 지정 주소를 유지합니다. 실제 연결 주소는 상세에 표시하며 설정/ID/원본 동작은 보존합니다.
+
+S25 구현: `Endpoint.Candidates/AllowsTarget`, `remote.Serve(check)`, `Engine.cycle/portStatus/failedPeer`, `PortStatus.remoteHost`, `DashboardController.compactPortRow`. check 응답의 literal target으로 forward하고 family 전환 실패 시 해당 host 포트의 ready를 무효화·publish합니다.
