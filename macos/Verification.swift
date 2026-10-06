@@ -103,6 +103,47 @@ func renderPreviews(_ directory: URL) throws {
         "transition-\(index)-\(mode == .aqua ? "light" : "dark").png"))
   }
   liveWindow.close()
+  let stableMode = DashboardController()
+  stableMode.notice = "전송 완료 · 기존 상태를 유지합니다."
+  var modeState = fixtureState()
+  modeState.config.ports = []
+  let modeWindow = NSWindow(
+    contentRect: NSRect(origin: .zero, size: DashboardController.panelSize), styleMask: .borderless,
+    backing: .buffered, defer: false)
+  modeWindow.contentView = stableMode.view
+  for (index, keep) in [false, true, false].enumerated() {
+    stableMode.preservesImage = keep
+    stableMode.render(modeState)
+    try renderNative(
+      stableMode.view,
+      to: directory.appendingPathComponent("mode-\(index)-\(keep ? "keep" : "copy").png"))
+  }
+  modeWindow.close()
+  for style in [NSAppearance.Name.aqua, .darkAqua] {
+    let row = AppearanceBackgroundView(frame: NSRect(x: 0, y: 0, width: 330, height: 64))
+    row.wantsLayer = true
+    row.appearance = NSAppearance(named: style)
+    var cells: [NSView] = []
+    for (mode, title) in [
+      (MenuBarGlyph.Mode.on, "ON"), (.off, "OFF"), (.paused, "일시 정지"), (.problem, "오류"),
+    ] {
+      let image = NSImageView(image: MenuBarGlyph.image(for: mode))
+      image.contentTintColor = .labelColor
+      image.alphaValue = mode == .off ? 0.65 : 1
+      image.widthAnchor.constraint(equalToConstant: 18).isActive = true
+      image.heightAnchor.constraint(equalToConstant: 18).isActive = true
+      let cell = vertical([image, label(title, size: 10)], spacing: 6)
+      cell.alignment = .centerX
+      cell.widthAnchor.constraint(equalToConstant: 64).isActive = true
+      cells.append(cell)
+    }
+    let strip = horizontal(cells, spacing: 16)
+    strip.frame.origin = NSPoint(x: 10, y: 12)
+    strip.setFrameSize(strip.fittingSize)
+    row.addSubview(strip)
+    try renderNative(
+      row, to: directory.appendingPathComponent("glyphs-\(style == .aqua ? "light" : "dark").png"))
+  }
   let bridge = CoreBridge()
   bridge.state = fixtureState()
   let settings = SettingsController(bridge: bridge, loginEnabled: false)
@@ -307,6 +348,120 @@ func nativeSelfTest() throws {
   panel.resetScroll()
   try require(
     panel.bodyScroll?.contentView.bounds.origin.y == 0, "reopened menu did not reset to top")
+  let menuDelegate = AppDelegate()
+  menuDelegate.clipboardBoard = board
+  menuDelegate.clipboardPreferences = preferences
+  menuDelegate.bridge.state = fixtureState()
+  menuDelegate.dashboard.notice = "전송 완료 · 기존 상태"
+  menuDelegate.dashboard.render(fixtureState())
+  let menuPanel = menuDelegate.dashboard
+  let geometry = [menuPanel.headerFrame, menuPanel.footerFrame, menuPanel.bodyScroll!.frame]
+  let beforeCount = board.changeCount
+  for keep in [true, false, true] {
+    menuDelegate.setClipboardMode(keep)
+    try require(menuPanel.notice == "전송 완료 · 기존 상태", "mode switch added or replaced notice")
+    try require(
+      [menuPanel.headerFrame, menuPanel.footerFrame, menuPanel.bodyScroll!.frame] == geometry,
+      "mode switch moved layout")
+    try require(menuPanel.view.fittingSize == fixedSize, "popover fitting size is not fixed")
+    try require(board.changeCount == beforeCount, "mode switch changed clipboard")
+  }
+  func actionButtons(_ view: NSView) -> [ActionButton] {
+    (view as? ActionButton).map { [$0] } ?? view.subviews.flatMap { actionButtons($0) }
+  }
+  var disabledState = fixtureState()
+  disabledState.on = false
+  let disabledPanel = DashboardController()
+  disabledPanel.render(disabledState)
+  let copyButtons = actionButtons(disabledPanel.view).filter {
+    ["경로 복사", "원본 복사"].contains($0.title)
+  }
+  try require(
+    copyButtons.count == 2
+      && copyButtons.allSatisfy { !$0.isEnabled && $0.toolTip == "업무 모드를 켜 주세요." },
+    "OFF actions lack reason tooltips")
+  disabledState.on = true
+  disabledPanel.expired = [disabledState.jobs[0].id]
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).filter { ["경로 복사", "원본 복사"].contains($0.title) }.allSatisfy {
+      !$0.isEnabled && $0.toolTip?.contains("만료") == true
+    }, "expired action lacks reason")
+  disabledPanel.expired.removeAll()
+  disabledState.hosts[0].status = "connecting"
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).filter { ["경로 복사", "원본 복사"].contains($0.title) }.allSatisfy {
+      !$0.isEnabled && $0.toolTip?.contains("연결") == true
+    }, "waiting connection actions lack reason")
+  disabledState.hosts[0].status = "connected"
+  disabledPanel.restoring = disabledState.jobs[0].id
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).first { $0.title == "가져오는 중…" }?.toolTip?.contains("가져오는 중")
+      == true, "busy restore lacks reason")
+  try require(
+    actionButtons(disabledPanel.view).first { $0.title == "경로 복사" }?.isEnabled == true,
+    "busy restore blocked path copy")
+  disabledPanel.restoring = nil
+  disabledState.jobs[0].status = "sending"
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).first { $0.title == "재시도" }?.toolTip?.contains("전송 중")
+      == true, "sending retry lacks reason")
+  disabledState.jobs[0].status = "expired"
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).first { $0.title == "재시도" }?.toolTip?.contains("다시 캡처")
+      == true, "expired retry lacks recovery hint")
+  disabledState.jobs[0].status = "paused"
+  disabledState.hosts[0].status = "connecting"
+  disabledPanel.render(disabledState)
+  try require(
+    actionButtons(disabledPanel.view).first { $0.title == "재시도" }?.isEnabled == true,
+    "retry disabled while connecting")
+  var invokes = 0
+  let disabledAction = ActionButton("test") { invokes += 1 }
+  disabledAction.setDisabledReason("업무 모드를 켜 주세요.")
+  try require(
+    disabledAction.accessibilityHelp() == disabledAction.toolTip,
+    "disabled reason lacks accessibility help")
+  disabledAction.performClick(nil)
+  try require(invokes == 0, "disabled action invoked")
+  disabledAction.setDisabledReason(nil)
+  disabledAction.performClick(nil)
+  try require(
+    invokes == 1 && disabledAction.toolTip == nil && disabledAction.accessibilityHelp() == nil,
+    "reenabled action retained disabled help")
+  let activeGlyph = MenuBarGlyph.image(for: .on)
+  let inactiveGlyph = MenuBarGlyph.image(for: .off)
+  try require(
+    activeGlyph.isTemplate && inactiveGlyph.isTemplate
+      && activeGlyph.size == NSSize(width: 18, height: 18)
+      && inactiveGlyph.size == activeGlyph.size, "ON/OFF glyph size differs")
+  try require(
+    activeGlyph.tiffRepresentation != inactiveGlyph.tiffRepresentation,
+    "OFF glyph is not visibly broken")
+  func glyphBounds(_ image: NSImage) throws -> NSRect {
+    guard let data = image.tiffRepresentation, let rep = NSBitmapImageRep(data: data) else {
+      throw NSError(domain: "Worklink QA", code: 1)
+    }
+    var pixels: [NSPoint] = []
+    for y in 0..<rep.pixelsHigh {
+      for x in 0..<rep.pixelsWide where (rep.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+        pixels.append(NSPoint(x: x, y: y))
+      }
+    }
+    try require(
+      !pixels.isEmpty && pixels.count < rep.pixelsWide * rep.pixelsHigh / 2,
+      "glyph is empty or has a filled background")
+    let xs = pixels.map { $0.x }
+    let ys = pixels.map { $0.y }
+    return NSRect(
+      x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+  }
+  try require(
+    try glyphBounds(activeGlyph) == glyphBounds(inactiveGlyph), "ON/OFF actual chain bounds differ")
   let live = DashboardController()
   live.render(fixtureState())
   let hostWindow = NSWindow(
@@ -348,8 +503,137 @@ func nativeSelfTest() throws {
   try require(
     shades[0] - shades[1] > 0.3 && abs(shades[0] - shades[2]) < 0.04,
     "live light/dark/light transition failed")
+  let quickRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "worklink-quick-\(UUID().uuidString)")
+  try FileManager.default.createDirectory(at: quickRoot, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: quickRoot) }
+  try JSONSerialization.data(withJSONObject: jsonObject(fixtureState().config)).write(
+    to: quickRoot.appendingPathComponent("config.json"))
+  let quickDelegate = AppDelegate()
+  guard let core = Bundle.main.url(forResource: "worklink", withExtension: nil) else {
+    throw NSError(domain: "Worklink QA", code: 1)
+  }
+  try quickDelegate.bridge.start(binary: core, dataDirectory: quickRoot)
+  defer { quickDelegate.bridge.stop() }
+  func waitQuick(_ condition: () -> Bool) throws {
+    let deadline = Date(timeIntervalSinceNow: 3)
+    while !condition() && Date() < deadline {
+      RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+    }
+    try require(condition(), "quick registration timed out")
+  }
+  try waitQuick { quickDelegate.bridge.state != nil }
+  let quick = quickDelegate.dashboard
+  quick.render(quickDelegate.bridge.state!)
+  try require(
+    quick.quickHost.titleOfSelectedItem == "office-test",
+    "quick host default differs from image target")
+  let draft = "Local: http://localhost:5188/preview?q=1#view"
+  quick.quickAddress.stringValue = draft
+  quick.render(quickDelegate.bridge.state!)
+  try require(quick.quickAddress.stringValue == draft, "state render discarded quick draft")
+  quick.registerQuick = { [weak quickDelegate] input, host in
+    quickDelegate?.registerQuickPort(input, host: host)
+  }
+  quick.quickAddress.sendAction(quick.quickAddress.action!, to: quick.quickAddress.target)
+  quickDelegate.registerQuickPort("5192", host: "office-test")
+  try waitQuick { !quick.quickBusy && quickDelegate.bridge.state?.config.ports.count == 3 }
+  let created = quickDelegate.bridge.state!.config.ports.last!
+  try require(
+    created.host == "office-test" && created.localPort == 5188
+      && created.endpoint.remoteHost == "127.0.0.1"
+      && created.endpoint.localURL(5188)?.absoluteString
+        == "http://localhost:5188/preview?q=1#view",
+    "quick port registration lost target or URL")
+  try require(
+    quick.quickAddress.stringValue.isEmpty && !quickDelegate.bridge.state!.on,
+    "quick registration did not clear success or changed work mode")
+  quick.quickAddress.stringValue = "5188"
+  quickDelegate.registerQuickPort("5188", host: "office-test")
+  try waitQuick { !quick.quickBusy }
+  try require(
+    quickDelegate.bridge.state!.config.ports.count == 3 && quick.quickAddress.stringValue == "5188"
+      && quick.quickError, "duplicate quick registration changed config or cleared draft")
+  quick.quickAddress.stringValue = "http://example.com:5189"
+  quickDelegate.registerQuickPort(quick.quickAddress.stringValue, host: "office-test")
+  try waitQuick { !quick.quickBusy }
+  try require(
+    quick.quickError && quickDelegate.bridge.state!.config.ports.count == 3
+      && quick.quickAddress.stringValue.contains("example.com"),
+    "non-loopback quick registration accepted")
+  for bad in ["http://localhost:5190 http://localhost:5191", "http://localhost/preview"] {
+    quick.quickAddress.stringValue = bad
+    quickDelegate.registerQuickPort(bad, host: "office-test")
+    try waitQuick { !quick.quickBusy }
+    try require(
+      quick.quickError && quickDelegate.bridge.state!.config.ports.count == 3
+        && quick.quickAddress.stringValue == bad,
+      "ambiguous/missing-port input changed config or lost draft")
+  }
+  let editingPanel = DashboardController()
+  var editingState = fixtureState(on: false)
+  editingState.config.hosts.append(
+    HostConfig(name: "office-backup", helper: "~/.local/bin/worklink"))
+  editingPanel.render(editingState)
+  editingPanel.quickHost.selectItem(withTitle: "office-backup")
+  editingPanel.quickHost.sendAction(
+    editingPanel.quickHost.action!, to: editingPanel.quickHost.target)
+  let editWindow = NSWindow(
+    contentRect: editingPanel.view.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+  editWindow.contentView = editingPanel.view
+  defer { editWindow.close() }
+  editingPanel.quickAddress.stringValue = "5188"
+  try require(
+    editWindow.makeFirstResponder(editingPanel.quickAddress),
+    "quick input cannot become first responder")
+  guard let editor = editingPanel.quickAddress.currentEditor() as? NSTextView else {
+    throw NSError(domain: "Worklink QA", code: 1)
+  }
+  editor.selectedRange = NSRange(location: 2, length: 0)
+  let parents = [
+    editingPanel.quickAddress.superview!, editingPanel.quickAddress.superview!.superview!,
+    editingPanel.bodyScroll!.documentView!, editingPanel.bodyScroll!,
+  ].map { ObjectIdentifier($0) }
+  for _ in 0..<20 {
+    editingPanel.render(editingState)
+    try require(
+      editingPanel.quickAddress.currentEditor() === editor && editor.string == "5188"
+        && editor.selectedRange == NSRange(location: 2, length: 0),
+      "state render interrupted input/cursor")
+    try require(
+      editingPanel.quickHost.titleOfSelectedItem == "office-backup",
+      "state render changed explicit SSH target")
+    try require(
+      [
+        editingPanel.quickAddress.superview!, editingPanel.quickAddress.superview!.superview!,
+        editingPanel.bodyScroll!.documentView!, editingPanel.bodyScroll!,
+      ].map { ObjectIdentifier($0) } == parents && editingPanel.view.constraints.count <= 14,
+      "form ancestry changed or constraints accumulated")
+  }
+  editor.setMarkedText(
+    "가", selectedRange: NSRange(location: 1, length: 0),
+    replacementRange: NSRange(location: 2, length: 0))
+  let marked = editor.markedRange()
+  editingPanel.render(editingState)
+  try require(
+    editor.hasMarkedText() && editor.markedRange() == marked
+      && editingPanel.quickAddress.currentEditor() === editor,
+    "state render interrupted IME composition")
+  editor.unmarkText()
+  var noHosts = editingState
+  noHosts.config.hosts = []
+  noHosts.config.ports = []
+  noHosts.config.imageHost = ""
+  let emptyPanel = DashboardController()
+  emptyPanel.render(noHosts)
+  try require(
+    !emptyPanel.quickAddress.isEnabled
+      && actionButtons(emptyPanel.view).first { $0.title == "등록" }?.toolTip?.contains("SSH")
+        == true,
+    "missing SSH target lacks registration hint")
   print(
-    "Native clipboard/counter/OFF/format/Unicode URL/lock overlap/ready state/EOF tests passed.")
+    "Native clipboard/lifecycle/appearance/menu layout/tooltips/glyphs/quick registration/IME tests passed."
+  )
 }
 func configureNativeTransferQA(_ delegate: AppDelegate) throws {
   guard let path = ProcessInfo.processInfo.environment["WORKLINK_QA_IMAGE_PATH"] else {

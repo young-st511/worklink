@@ -79,3 +79,20 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - 테스트 window의 appearance 전환을 검증한 것이며 실제 macOS 시스템 외형 설정 토글이나 제품 팝업 마우스 조작을 확인한 것은 아닙니다. CUA 접근 거부를 우회하지 않았습니다.
 
 설치된 앱을 atomic 교체하고 서명과 빌드 파일 hash를 확인했습니다. 사용자 설정·전송 데이터·원격 헬퍼는 그대로 두었으며 실행 중 제품 앱을 자동 재시작하지 않았습니다. 공개 소스 검수 통과, local Git만 사용했습니다.
+
+## 메뉴 피드백과 팝업 빠른 등록
+
+2026-10-06 사용자 피드백에 따라 S19–S22를 구현했습니다. 원본 유지 전환이 기존 notice를 덮어쓰거나 새 행을 추가하지 않으며 root frame/fitting size 380×460 point와 header 행 높이를 고정합니다. 최근 이미지의 비활성 이유를 `NSView.toolTip`과 접근성 도움말로 제공하고 disabled action을 차단합니다. 메뉴바는 같은 18 point template 체인을 사용하며 OFF는 중심이 끊어진 체인+65% alpha, pause/error는 작은 표시를 사용합니다. 새로운 폴링은 추가하지 않았습니다. tooltip과 template image 방식은 [Apple toolTip 문서](https://developer.apple.com/documentation/appkit/nsview/tooltip), [template image 문서](https://developer.apple.com/documentation/appkit/nsimage/istemplate)를 참고했습니다.
+
+팝업 개발 서버 영역에 포트/localhost URL 입력·SSH 선택·등록/Enter를 추가했습니다. 기존 parser와 revision 검증을 사용하는 save_config를 재사용하며 OFF에서도 설정을 저장할 수 있습니다. 성공만 입력을 비우고 오류는 inline으로 표시합니다. scroll/document/stack/form의 조상을 유지하고 동적 행만 갱신하므로 입력을 중단시키지 않습니다.
+
+- 구현 전 native 테스트에서 새 기능 미구현 compile 실패를 확인한 후 구현했습니다. native self-test, Go race/test/vet, 앱 아이콘 검사, diff 검사 통과.
+- 원본 유지 true/false/true 전환의 frame/fitting/header/footer/목록 위치·기존 notice·clipboard changeCount 보존 검사 통과. 두 설명 상태와 동일 notice를 가진 실제 AppKit PNG에서 위치 변화를 확인했습니다.
+- 업무 OFF·만료·전송 중·원본 가져오는 중·연결 대기·SSH 없음 등 disabled 이유와 접근성 help, disabled synthetic performClick 차단, 다시 활성화 시 도움말 제거를 확인했습니다.
+- ON/OFF glyph의 동일 18 point canvas, 실제 alpha bounds 일치, 서로 다른 그림 및 filled 배경 없음 검사를 통과했습니다. 밝은/다크의 ON/OFF/pause/error glyph PNG를 열어 시각 확인했습니다.
+- 별도 임시 Go core를 OFF로 실행해 Enter 경로의 URL 해석 및 config 저장, 대상/path/query/fragment 보존, 중복·non-loopback·여러 후보·포트 누락 거부, 오류 draft 보존, 중복 요청 차단을 확인했습니다. 운영 SSH·사용자 clipboard·로그인 항목·원격 서비스는 이 테스트에서 사용하지 않았습니다.
+- 별도 native field editor에서 20회 render 중 동일 input/editor·커서·명시적 SSH 선택·조상 뷰 유지와 제약 누적 없음을 확인했습니다. Korean marked text/markedRange도 render 이후 보존되는 것을 확인했습니다. 실제 사용자 키보드 IME 조작을 테스트한 것은 아닙니다.
+- 두 병렬 스펙/코드 리뷰 추가 blocker 없음. 코드 리뷰어는 최신 Swift 소스를 별도 임시 번들로 빌드해 전체 native self-test를 통과했습니다.
+- 실제 메뉴바 마우스 클릭·disabled hover 툴팁 표시·제품 NSPopover 재열기 동작은 CUA의 앱 접근 거부로 자동 조작하지 않았습니다. native 기능/속성/field editor와 렌더 검증을 그 대체 완료로 주장하지 않습니다.
+
+사용자가 옮긴 전체 사용자용 `/Applications/Worklink.app`의 기존 설치를 atomic 교체했습니다. 서명·Info.plist/실행 파일/아이콘/코어 hash와 아이콘 등록 검증을 통과했습니다. `~/Applications`에 새 복사본을 만들지 않았고 사용자 데이터·설정·원격 헬퍼는 변경하지 않았습니다. 제품 앱을 자동 재시작하지 않았습니다. 공개 소스 검수 통과, 로컬 Git만 사용했습니다.

@@ -277,7 +277,12 @@ final class ActionButton: NSButton {
     font = .systemFont(ofSize: 12)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-  @objc private func runAction() { invoke?() }
+  func setDisabledReason(_ reason: String?) {
+    isEnabled = reason == nil
+    toolTip = reason
+    setAccessibilityHelp(reason)
+  }
+  @objc private func runAction() { if isEnabled { invoke?() } }
 }
 func label(_ text: String, size: CGFloat = 12, color: NSColor = .labelColor, bold: Bool = false)
   -> NSTextField

@@ -48,16 +48,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     dashboard.quit = { NSApp.terminate(nil) }
     dashboard.open = { [weak self] port in self?.open(port) }
     dashboard.preservesImage = clipboardPreferences.preservesImage
-    dashboard.changeClipboardMode = { [weak self] on in
-      guard let self else { return }
-      clipboardPreferences.preservesImage = on
-      dashboard.preservesImage = on
-      notice(on ? "원본 유지 · 필요할 때 경로 복사를 눌러 주세요." : "자동 경로 복사 · 전송 완료 시 경로를 복사합니다.")
-    }
+    dashboard.changeClipboardMode = { [weak self] on in self?.setClipboardMode(on) }
     dashboard.restore = { [weak self] job in self?.restore(job) }
     dashboard.copy = { [weak self] job in self?.copy(job) }
     dashboard.retry = { [weak self] job in
       self?.bridge.send("retry", ["job_id": job.id], reply: { [weak self] r in self?.result(r) })
+    }
+    dashboard.registerQuick = { [weak self] input, host in
+      self?.registerQuickPort(input, host: host)
     }
     dashboard.titleRefresh = { [weak self] port in
       self?.bridge.send("title", ["port_id": port.id], reply: { [weak self] r in self?.result(r) })
@@ -119,6 +117,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     popover.contentSize = DashboardController.panelSize
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
   }
+  func setClipboardMode(_ on: Bool) {
+    clipboardPreferences.preservesImage = on
+    dashboard.preservesImage = on
+    if let state = bridge.state { dashboard.render(state) }
+    popover.contentSize = DashboardController.panelSize
+  }
+  func registerQuickPort(_ input: String, host: String) {
+    guard !dashboard.quickBusy else { return }
+    guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      dashboard.finishQuickRegistration("포트 또는 URL을 입력해 주세요.", success: false)
+      return
+    }
+    guard bridge.state?.config.hosts.contains(where: { $0.name == host }) == true else {
+      dashboard.finishQuickRegistration("등록할 SSH 대상을 먼저 선택해 주세요.", success: false)
+      return
+    }
+    dashboard.beginQuickRegistration()
+    bridge.send(
+      "parse", ["input": input],
+      reply: { [weak self] reply in
+        guard let self else { return }
+        func fail(_ message: String) { dashboard.finishQuickRegistration(message, success: false) }
+        if let error = reply["error"] as? String {
+          fail(error)
+          return
+        }
+        guard let parsed = reply["result"] as? [String: Any] else {
+          fail("주소를 확인하지 못했습니다.")
+          return
+        }
+        if let candidates = parsed["candidates"] as? [String], !candidates.isEmpty {
+          fail("포트나 URL 하나만 입력해 주세요.")
+          return
+        }
+        if let error = parsed["error"] as? String, !error.isEmpty {
+          fail(error)
+          return
+        }
+        if parsed["needs_port"] as? Bool == true {
+          fail("포트 번호를 추가해 주세요. 예: localhost:5173")
+          return
+        }
+        guard let endpoint = parsed["endpoint"],
+          let bytes = try? JSONSerialization.data(withJSONObject: endpoint),
+          let address = try? decoder().decode(EndpointConfig.self, from: bytes)
+        else {
+          fail("주소를 확인하지 못했습니다.")
+          return
+        }
+        guard var config = bridge.state?.config, config.hosts.contains(where: { $0.name == host })
+        else {
+          fail("SSH 대상이 변경됐습니다. 다시 선택해 주세요.")
+          return
+        }
+        config.ports.append(
+          PortConfig(
+            id: identifier(), name: "", host: host, endpoint: address,
+            localPort: address.remotePort, enabled: true, title: nil))
+        bridge.send(
+          "save_config", ["config": jsonObject(config)],
+          reply: { [weak self] result in
+            guard let self else { return }
+            if let error = result["error"] as? String {
+              dashboard.finishQuickRegistration(error, success: false)
+              return
+            }
+            dashboard.finishQuickRegistration(
+              "\(host) · 원격 포트 \(address.remotePort) 등록 완료", success: true)
+          })
+      })
+  }
   func toggle() {
     desiredOn.toggle()
     clipboardBlocked = false
@@ -161,16 +230,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       state?.hosts.contains(where: { $0.status == "blocked" || $0.status == "backoff" }) == true
       || state?.ports.contains(where: { $0.status == "conflict" }) == true
       || dashboard.notice.hasPrefix("오류")
-    let symbol =
-      !desiredOn
-      ? "link" : suspended ? "moon.circle" : problem ? "exclamationmark.circle" : "link.circle.fill"
-    let image = NSImage(
-      systemSymbolName: symbol, accessibilityDescription: "Worklink \(desiredOn ? "ON" : "OFF")")
-    image?.isTemplate = true
-    item.button?.image = image
+    let mode: MenuBarGlyph.Mode = !desiredOn ? .off : suspended ? .paused : problem ? .problem : .on
+    item.button?.image = MenuBarGlyph.image(for: mode)
     item.button?.alphaValue = desiredOn ? 1 : 0.65
-    item.button?.toolTip =
-      "Worklink · \(suspended ? "잠금/절전 일시 정지" : desiredOn ? "업무 ON" : "업무 OFF") · 좌클릭 목록 / 우클릭 전환"
+    let status =
+      suspended ? "잠금/절전 일시 정지" : !desiredOn ? "업무 OFF" : problem ? "연결 또는 전송 오류" : "업무 ON"
+    item.button?.toolTip = "Worklink · \(status) · 좌클릭 목록 / 우클릭 전환"
+    item.button?.setAccessibilityLabel("Worklink")
+    item.button?.setAccessibilityValue(status)
+    item.button?.setAccessibilityHelp("좌클릭으로 목록을 열고 우클릭으로 업무 모드를 전환합니다.")
   }
   func notice(_ text: String) {
     dashboard.notice = text

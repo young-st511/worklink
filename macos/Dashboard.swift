@@ -13,7 +13,7 @@ final class AppearanceBackgroundView: NSView {
   }
 }
 
-final class DashboardController: NSViewController {
+final class DashboardController: NSViewController, NSTextFieldDelegate {
   static let panelSize = NSSize(width: 380, height: 460)
   private(set) var bodyScroll: NSScrollView?
   private var pinnedHeader: NSView?
@@ -43,9 +43,116 @@ final class DashboardController: NSViewController {
   var expired: Set<String> = []
   var expanded: Set<String> = []
   private var lastState: CoreState?
+  private var layoutConstraints: [NSLayoutConstraint] = []
+  private var bodyStack: NSStackView?
+  private var bodyContent: FlippedView?
+  let quickAddress = NSTextField()
+  let quickHost = NSPopUpButton()
+  var registerQuick: ((String, String) -> Void)?
+  private(set) var quickBusy = false
+  private(set) var quickError = false
+  private var quickMessage = ""
+  private var quickHostExplicit = false
+  private lazy var quickAdd = ActionButton("등록") { [weak self] in self?.submitQuick() }
+  private lazy var quickFeedback = label("", size: 10, color: .secondaryLabelColor)
+  private lazy var quickForm: NSStackView = {
+    quickAddress.placeholderString = "포트 · localhost URL"
+    quickAddress.font = .systemFont(ofSize: 11)
+    quickAddress.bezelStyle = .roundedBezel
+    quickAddress.setAccessibilityLabel("원격 포트 또는 localhost URL")
+    quickHost.setAccessibilityLabel("원격 SSH 대상")
+    quickAdd.setAccessibilityLabel("개발 서버 등록")
+    quickAddress.delegate = self
+    quickAddress.target = self
+    quickAddress.action = #selector(submitQuick)
+    quickAddress.widthAnchor.constraint(equalToConstant: 166).isActive = true
+    quickAddress.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    quickHost.font = .systemFont(ofSize: 11)
+    quickHost.target = self
+    quickHost.action = #selector(quickHostChanged)
+    quickHost.widthAnchor.constraint(equalToConstant: 104).isActive = true
+    quickHost.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    quickAdd.widthAnchor.constraint(equalToConstant: 54).isActive = true
+    quickAdd.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    quickFeedback.maximumNumberOfLines = 2
+    quickFeedback.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    return vertical([horizontal([quickAddress, quickHost, quickAdd]), quickFeedback], spacing: 4)
+  }()
+  private var quickInput: String {
+    (quickAddress.currentEditor() as? NSTextView)?.string ?? quickAddress.stringValue
+  }
+  func controlTextDidChange(_ notification: Notification) {
+    if (notification.object as? NSTextField) === quickAddress {
+      if quickError {
+        quickError = false
+        quickMessage = ""
+      }
+      refreshQuickControls()
+    }
+  }
+  @objc private func quickHostChanged() { quickHostExplicit = true }
+  @objc private func submitQuick() {
+    guard quickAdd.isEnabled, !quickBusy, let host = quickHost.titleOfSelectedItem else { return }
+    registerQuick?(quickInput, host)
+  }
+  func beginQuickRegistration() {
+    quickBusy = true
+    quickError = false
+    quickMessage = "주소 확인·등록 중…"
+    refreshQuickControls()
+  }
+  func finishQuickRegistration(_ message: String, success: Bool) {
+    quickBusy = false
+    quickError = !success
+    quickMessage = message
+    if success { quickAddress.stringValue = "" }
+    refreshQuickControls()
+    if let window = quickAddress.window, window.isKeyWindow {
+      window.makeFirstResponder(quickAddress)
+    }
+  }
+  private func refreshQuickControls() {
+    _ = quickForm
+    let names = lastState?.config.hosts.map { $0.name } ?? []
+    let selected = quickHost.titleOfSelectedItem
+    let titles = names.isEmpty ? ["SSH 대상 없음"] : names
+    if quickHost.itemTitles != titles {
+      quickHost.removeAllItems()
+      quickHost.addItems(withTitles: titles)
+    }
+    if quickHostExplicit, let selected, names.contains(selected) {
+      quickHost.selectItem(withTitle: selected)
+    } else {
+      quickHostExplicit = false
+      let preferred = lastState?.config.imageHost ?? ""
+      if let name = names.contains(preferred) ? preferred : names.first {
+        quickHost.selectItem(withTitle: name)
+      }
+    }
+    let inputReason = names.isEmpty ? "SSH 대상을 먼저 등록해 주세요." : quickBusy ? "등록 중입니다." : nil
+    quickAddress.isEnabled = inputReason == nil
+    quickHost.isEnabled = inputReason == nil
+    quickAddress.toolTip = inputReason ?? "예: 5173 또는 localhost:5173/preview"
+    quickHost.toolTip = inputReason ?? "등록할 원격 SSH 대상"
+    quickAddress.setAccessibilityHelp(inputReason)
+    quickHost.setAccessibilityHelp(inputReason)
+    let reason =
+      inputReason
+      ?? (quickInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? "포트 또는 URL을 입력해 주세요." : nil)
+    quickAdd.setDisabledReason(reason)
+    quickFeedback.stringValue = quickMessage.isEmpty ? "선택한 SSH 대상의 원격 포트를 등록합니다." : quickMessage
+    quickFeedback.textColor = quickError ? .systemRed : .secondaryLabelColor
+    quickFeedback.toolTip = quickFeedback.stringValue
+  }
   override func loadView() {
     view = AppearanceBackgroundView(frame: NSRect(origin: .zero, size: Self.panelSize))
     view.wantsLayer = true
+    NSLayoutConstraint.activate([
+      view.widthAnchor.constraint(equalToConstant: Self.panelSize.width),
+      view.heightAnchor.constraint(equalToConstant: Self.panelSize.height),
+    ])
+    preferredContentSize = Self.panelSize
   }
   func render(_ state: CoreState) {
     loadViewIfNeeded()
@@ -55,7 +162,9 @@ final class DashboardController: NSViewController {
       self.copiedCount = nil
     }
     let scrollOffset = bodyScroll?.contentView.bounds.origin.y ?? 0
-    view.subviews.forEach { $0.removeFromSuperview() }
+    NSLayoutConstraint.deactivate(layoutConstraints)
+    view.subviews.filter { $0 !== bodyScroll }.forEach { $0.removeFromSuperview() }
+    refreshQuickControls()
     let title = label("Worklink", size: 16, bold: true)
     let status = label(state.on ? "업무 ON" : "업무 OFF", size: 11, color: .secondaryLabelColor)
     let keep = ActionButton("캡처 원본 유지") { [weak self] in
@@ -65,17 +174,27 @@ final class DashboardController: NSViewController {
     keep.setButtonType(.switch)
     keep.state = preservesImage ? .on : .off
     keep.font = .systemFont(ofSize: 11)
+    let heading = horizontal([title, status])
+    heading.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    keep.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    keep.toolTip = "켜면 캡처 원본을 유지하고, 끄면 전송 완료 시 경로를 자동 복사합니다."
+    func headerLine(_ text: String, size: CGFloat) -> NSTextField {
+      let field = label(text, size: size, color: .secondaryLabelColor)
+      field.maximumNumberOfLines = 1
+      field.lineBreakMode = .byTruncatingTail
+      field.heightAnchor.constraint(equalToConstant: 14).isActive = true
+      field.toolTip = text
+      return field
+    }
     let header = vertical(
       [
-        horizontal([title, status]),
-        label(
-          state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11,
-          color: .secondaryLabelColor),
+        heading,
+        headerLine(state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11),
         keep,
-        label(
-          preservesImage ? "자동 전송 후에도 로컬 이미지를 유지합니다." : "전송 완료 시 원격 경로를 자동 복사합니다.", size: 10,
-          color: .secondaryLabelColor),
+        headerLine(
+          preservesImage ? "자동 전송 후에도 로컬 이미지를 유지합니다." : "전송 완료 시 원격 경로를 자동 복사합니다.", size: 10),
       ], spacing: 6)
+    header.heightAnchor.constraint(equalToConstant: 90).isActive = true
     var sections: [NSView] = []
     if !notice.isEmpty {
       sections.append(
@@ -94,6 +213,7 @@ final class DashboardController: NSViewController {
     }
     sections.append(separator())
     sections.append(label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true))
+    sections.append(quickForm)
     if state.config.ports.isEmpty {
       sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
     }
@@ -183,13 +303,13 @@ final class DashboardController: NSViewController {
       let action = ActionButton(job.status == "complete" ? "경로 복사" : "재시도") { [weak self] in
         if job.status == "complete" { self?.copy?(job) } else { self?.retry?(job) }
       }
-      action.isEnabled = state.on && !expired.contains(job.id) && job.status != "sending"
+      action.setDisabledReason(disabledReason(job, state: state, original: false))
       var actions: [NSView] = [action]
       if job.status == "complete" {
         let original = ActionButton(restoring == job.id ? "가져오는 중…" : "원본 복사") { [weak self] in
           self?.restore?(job)
         }
-        original.isEnabled = state.on && !expired.contains(job.id) && restoring == nil
+        original.setDisabledReason(disabledReason(job, state: state, original: true))
         actions.append(original)
       }
       var row: [NSView] = [
@@ -209,28 +329,42 @@ final class DashboardController: NSViewController {
           ActionButton("종료") { [weak self] in self?.quit?() },
         ]),
       ], spacing: 10)
-    let stack = vertical(sections, spacing: 10)
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    let content = FlippedView(frame: NSRect(x: 0, y: 0, width: 380, height: 400))
-    content.addSubview(stack)
-    NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
-      stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
-      stack.widthAnchor.constraint(equalToConstant: 344),
-    ])
+    // Keep the form's entire ancestry attached while updating dynamic rows.
+    let stack = bodyStack ?? vertical([], spacing: 10)
+    for previous in stack.arrangedSubviews where previous !== quickForm {
+      stack.removeArrangedSubview(previous)
+      previous.removeFromSuperview()
+    }
+    for (index, section) in sections.enumerated() {
+      if section !== quickForm || !stack.arrangedSubviews.contains(where: { $0 === quickForm }) {
+        stack.insertArrangedSubview(section, at: index)
+      }
+    }
+    let content = bodyContent ?? FlippedView(frame: NSRect(x: 0, y: 0, width: 380, height: 400))
+    if bodyContent == nil {
+      stack.translatesAutoresizingMaskIntoConstraints = false
+      content.addSubview(stack)
+      NSLayoutConstraint.activate([
+        stack.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+        stack.topAnchor.constraint(equalTo: content.topAnchor, constant: 8),
+        stack.widthAnchor.constraint(equalToConstant: 344),
+      ])
+      bodyContent = content
+      bodyStack = stack
+    }
     content.layoutSubtreeIfNeeded()
     let height = max(40, stack.fittingSize.height + 16)
     content.setFrameSize(NSSize(width: 380, height: height))
-    let scroll = NSScrollView()
+    let scroll = bodyScroll ?? NSScrollView()
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     scroll.drawsBackground = false
-    scroll.documentView = content
+    if scroll.documentView !== content { scroll.documentView = content }
     for child in [header, scroll, footer] {
       child.translatesAutoresizingMaskIntoConstraints = false
-      view.addSubview(child)
+      if child.superview !== view { view.addSubview(child) }
     }
-    NSLayoutConstraint.activate([
+    layoutConstraints = [
       header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18),
       header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18),
       header.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
@@ -241,7 +375,8 @@ final class DashboardController: NSViewController {
       scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
       scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 12),
       scroll.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
-    ])
+    ]
+    NSLayoutConstraint.activate(layoutConstraints)
     bodyScroll = scroll
     pinnedHeader = header
     pinnedFooter = footer
@@ -253,4 +388,23 @@ final class DashboardController: NSViewController {
     scroll.reflectScrolledClipView(scroll.contentView)
     view.needsDisplay = true
   }
+  private func disabledReason(_ job: ImageJob, state: CoreState, original: Bool) -> String? {
+    if expired.contains(job.id) { return "원격 파일이 만료되었습니다." }
+    if job.status == "expired" { return "대기 시간이 지났습니다. 다시 캡처해 주세요." }
+    if !state.on { return "업무 모드를 켜 주세요." }
+    if job.status == "sending" { return "전송 중입니다. 완료 후 사용하세요." }
+    if original, let restoring {
+      return restoring == job.id ? "원본 이미지를 가져오는 중입니다." : "다른 원본 이미지를 가져오는 중입니다."
+    }
+    if !state.config.hosts.contains(where: { $0.name == job.host }) {
+      return "원래 전송 대상을 다시 등록해 주세요."
+    }
+    if job.status == "complete"
+      && !state.hosts.contains(where: { $0.host == job.host && $0.status == "connected" })
+    {
+      return "원래 SSH 대상의 연결을 기다리는 중입니다."
+    }
+    return nil
+  }
+
 }
