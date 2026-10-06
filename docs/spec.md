@@ -73,3 +73,7 @@ S24 구현: `DashboardController.render/toggleWork`, `MenuWorkSwitch.acceptsFirs
 - S25: 기존 등록과 새 localhost/127.0.0.1/[::1] 포트는 등록 주소를 먼저 확인하고 실패 시 다른 loopback family를 확인합니다. 둘 다 열렸으면 등록 주소를 우선합니다. 등록한 포트만 확인하며 실제 확인된 literal 주소로 양쪽 로컬 loopback SSH forward를 연결합니다. 서버 family가 바뀌면 소유한 해당 forward만 취소/재등록하고 오류는 재연결합니다. 다른 loopback IP는 지정 주소를 유지합니다. 실제 연결 주소는 상세에 표시하며 설정/ID/원본 동작은 보존합니다.
 
 S25 구현: `Endpoint.Candidates/AllowsTarget`, `remote.Serve(check)`, `Engine.cycle/portStatus/failedPeer`, `PortStatus.remoteHost`, `DashboardController.compactPortRow`. check 응답의 literal target으로 forward하고 family 전환 실패 시 해당 host 포트의 ready를 무효화·publish합니다.
+
+- S26: 최근 이미지 행은 한 줄 28 point로 시간·실제 작업 대상·용량·짧은 상태·작은 경로/원본 복사 버튼을 표시합니다. 전체 metadata(형식 포함)·오류·비활성 이유는 tooltip/accessibility로 유지합니다. 최근 5개, original copy/copy_path/retry callback·clipboard 준비됨 추적은 유지합니다. 일반 5개 이미지가 body viewport에 들어갑니다.
+
+S26 구현: `DashboardController.render`의 28 point image row, metadata/state tooltip/AX와 compactAction icon-only control. 기존 copy/restore/retry와 copiedCount guard를 유지합니다. native self-test는 5개 viewport/행 높이·두 복사 callback·help를 확인합니다.

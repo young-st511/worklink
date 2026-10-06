@@ -273,27 +273,59 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
         date.date(from: job.createdAt).map {
           DateFormatter.localizedString(from: $0, dateStyle: .none, timeStyle: .short)
         } ?? "최근"
-      let info = label(
-        "\(time) · \(job.host) · \(job.extension.uppercased()) · \(fileSize(job.size))", size: 11)
+      let metadata = "\(time) · \(job.host) · \(job.extension.uppercased()) · \(fileSize(job.size))"
+      let info = label("\(time) · \(job.host) · \(fileSize(job.size))", size: 10.5)
+      info.maximumNumberOfLines = 1
+      info.lineBreakMode = .byTruncatingMiddle
+      info.toolTip = metadata
+      info.setAccessibilityLabel(metadata)
+      info.widthAnchor.constraint(equalToConstant: 198).isActive = true
+      info.heightAnchor.constraint(equalToConstant: 16).isActive = true
+      func compactAction(_ button: ActionButton, symbol: String) {
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.controlSize = .small
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        button.setAccessibilityLabel(button.title)
+        if button.isEnabled { button.toolTip = button.title }
+      }
       let action = ActionButton(job.status == "complete" ? "경로 복사" : "재시도") { [weak self] in
         if job.status == "complete" { self?.copy?(job) } else { self?.retry?(job) }
       }
       action.setDisabledReason(disabledReason(job, state: state, original: false))
+      compactAction(action, symbol: job.status == "complete" ? "doc.on.doc" : "arrow.clockwise")
       var actions: [NSView] = [action]
       if job.status == "complete" {
         let original = ActionButton(restoring == job.id ? "가져오는 중…" : "원본 복사") { [weak self] in
           self?.restore?(job)
         }
         original.setDisabledReason(disabledReason(job, state: state, original: true))
+        compactAction(original, symbol: "photo")
         actions.append(original)
       }
-      var row: [NSView] = [
-        info, label(stateText, size: 11, color: .secondaryLabelColor), horizontal(actions),
-      ]
-      if let error = job.error, !error.isEmpty {
-        row.append(label(error, size: 10, color: .systemRed))
-      }
-      sections.append(vertical(row, spacing: 2))
+      let shortState =
+        [
+          "붙여넣기 준비됨": "준비됨", "전송 완료": "완료", "전송 중": "전송 중", "전송 대기": "대기", "일시 중지": "중지",
+          "전송 실패": "실패", "대기 만료": "만료", "원격 파일 만료": "만료",
+        ][stateText] ?? stateText
+      let status = label(
+        shortState, size: 10, color: job.error?.isEmpty == false ? .systemRed : .secondaryLabelColor
+      )
+      status.maximumNumberOfLines = 1
+      status.lineBreakMode = .byTruncatingTail
+      status.widthAnchor.constraint(equalToConstant: 52).isActive = true
+      status.heightAnchor.constraint(equalToConstant: 14).isActive = true
+      status.toolTip = job.error?.isEmpty == false ? "\(stateText) · \(job.error!)" : stateText
+      status.setAccessibilityLabel(status.toolTip)
+      let spacer = NSView()
+      let row = horizontal([info, status, spacer] + actions, spacing: 4)
+      row.distribution = .fill
+      row.widthAnchor.constraint(equalToConstant: 344).isActive = true
+      row.heightAnchor.constraint(equalToConstant: 28).isActive = true
+      row.identifier = NSUserInterfaceItemIdentifier("image-row-\(job.id)")
+      sections.append(row)
     }
     let footer = vertical(
       [

@@ -133,3 +133,14 @@ check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 
 - native 회귀/아이콘 검증 통과. 실제 popup mouse/hover는 CUA 거부로 미검증이며 우회하지 않았습니다.
 
 /Applications 앱도 atomic 교체하고 서명·빌드 hash·공개 소스 검수를 통과했습니다. 제품 앱을 자동 재시작하지 않았으며 로컬 Git만 사용했습니다.
+
+## 최근 이미지 한 줄 목록
+
+2026-10-07 최근 이미지를 한 줄 28 point의 시간·실제 host·용량·짧은 상태와 작은 path/original/retry 아이콘 버튼으로 줄였습니다. full title/action·disabled 이유는 유지하고 metadata(형식 포함)/원래 상태/오류를 tooltip/accessibility로 제공합니다. 기존 copiedCount·clipboard guard·원본 처리 코드는 바꾸지 않았습니다.
+
+- spec-first `image list is not compact` native 실패 후 구현. 한 줄 28 point와 5개 viewport 포함, 기존 path/original callbacks 및 tooltip, 기존 OFF/expiry/busy/accessibility/disabled actions와 원본 모드·field editor/IME·빠른 등록 등 native self-test 통과. Go race/test/vet·아이콘 검사·diff 검사도 통과했습니다.
+- 5개 최근 이미지의 light/dark AppKit PNG를 열어 metadata/state/icon 배치와 잘림/겹침 없음을 확인했습니다. 실제 tooltip hover/mouse 클릭은 CUA 거부로 미검증이며 우회하지 않았습니다.
+
+두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어가 최신 Swift 소스를 별도 임시 앱으로 빌드해 native 검증을 통과했고 engine/remote race5회·vet·아이콘 검사도 통과했습니다.
+
+/Applications 설치본을 atomic 교체하고 코드 서명·빌드 hash 및 공개 소스 검수를 확인했습니다. 사용자 설정·이미지 데이터·원격 helper는 이번 UI step에서 변경하지 않았고 앱 자동 재시작/GitHub 작업은 하지 않았습니다.

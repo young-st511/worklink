@@ -585,6 +585,36 @@ func nativeSelfTest() throws {
     actionButtons(compactPanel.view).contains { $0.title == "주소 복사" }
       && actionButtons(compactPanel.view).contains { $0.title == "제목 확인" },
     "compact disclosure removed details actions")
+  let imagePanel = DashboardController()
+  var imageState = fixtureState()
+  imageState.config.ports = []
+  imageState.jobs = (0..<5).map { index in
+    var job = imageState.jobs[0]
+    job.id = String(format: "%032x", index + 10)
+    return job
+  }
+  imagePanel.render(imageState)
+  let imageRows = taggedViews(imagePanel.view, prefix: "image-row-")
+  try require(
+    imageRows.count == 5 && imageRows.allSatisfy { abs($0.frame.height - 28) < 0.1 },
+    "image list is not compact")
+  let imageDocument = imagePanel.bodyScroll!.documentView!
+  try require(
+    imageRows.allSatisfy {
+      imagePanel.bodyScroll!.contentView.bounds.contains($0.convert($0.bounds, to: imageDocument))
+    }, "five images do not fit")
+  var copiedID: String?
+  var restoredID: String?
+  imagePanel.copy = { copiedID = $0.id }
+  imagePanel.restore = { restoredID = $0.id }
+  guard let pathAction = actionButtons(imageRows[0]).first(where: { $0.title == "경로 복사" }),
+    let originalAction = actionButtons(imageRows[0]).first(where: { $0.title == "원본 복사" })
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  pathAction.performClick(nil)
+  originalAction.performClick(nil)
+  try require(
+    copiedID != nil && restoredID == copiedID && pathAction.toolTip == "경로 복사"
+      && originalAction.toolTip == "원본 복사", "compact image callbacks or help missing")
   let live = DashboardController()
   live.render(fixtureState())
   let hostWindow = NSWindow(
