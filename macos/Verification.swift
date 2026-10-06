@@ -406,6 +406,32 @@ func nativeSelfTest() throws {
   func actionButtons(_ view: NSView) -> [ActionButton] {
     (view as? ActionButton).map { [$0] } ?? view.subviews.flatMap { actionButtons($0) }
   }
+  guard let keepControl = actionButtons(menuPanel.view).first(where: { $0.title == "캡처 원본 유지" }),
+    let titleRow = keepControl.superview as? NSStackView
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  try require(
+    titleRow.arrangedSubviews.contains { ($0 as? NSTextField)?.stringValue == "Worklink" }
+      && menuPanel.headerFrame.height <= 30, "header controls are not in compact title row")
+  func switches(_ root: NSView) -> [NSSwitch] {
+    (root as? NSSwitch).map { [$0] } ?? root.subviews.flatMap { switches($0) }
+  }
+  guard let workSwitch = switches(menuPanel.view).first else {
+    throw NSError(
+      domain: "Worklink QA", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "work mode switch missing"])
+  }
+  try require(
+    workSwitch.acceptsFirstMouse(for: nil) && workSwitch.accessibilityLabel() == "업무 모드",
+    "header switch cannot handle first click or lacks accessibility label")
+  var workToggles = 0
+  menuPanel.toggle = { workToggles += 1 }
+  workSwitch.sendAction(workSwitch.action!, to: workSwitch.target)
+  try require(
+    workToggles == 1 && workSwitch.state == .on,
+    "header switch did not invoke existing toggle callback")
+  try require(
+    !actionButtons(menuPanel.view).contains { ["업무 시작", "업무 종료"].contains($0.title) },
+    "duplicate footer work control remains")
   var disabledState = fixtureState()
   disabledState.on = false
   let disabledPanel = DashboardController()

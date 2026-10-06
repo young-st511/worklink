@@ -61,3 +61,9 @@ S19–S22 구현: `AppDelegate.setClipboardMode/registerQuickPort/updateIcon`, `
 - S23: 기본 포트 행은 상태점·이름·짧은 localhost 주소·상태·펼치기를 한 줄(24 point)에 표시합니다. 전체 URL과 오류는 tooltip 및 상세에서 확인하고, 주소/이름 클릭은 기존 URL의 scheme/path/query/fragment를 유지합니다. 포트 행 간 간격을 줄이고 관리 링크는 개발 서버 heading에 합칩니다. 빠른 등록 안내는 높이를 고정한 한 줄로 표시합니다. 5개 일반 포트가 기본 body viewport에 들어가고 팝업 크기·모드 전환·입력/cursor/IME 보존은 유지합니다.
 
 S23 구현: `DashboardController.compactPortRow/render/quickForm`. 24 point 행/3 point gap, 전체 URL·오류 tooltip/펼친 상세, heading의 관리 링크와 고정 한 줄 안내를 사용합니다. `nativeSelfTest`는 일반 완료 notice가 있는 5개 포트의 viewport 적합·행 높이, HTTPS/path/query/fragment를 가진 브라우저 콜백·상세 동작을 확인합니다.
+
+## 상단 한 줄 업무 제어
+
+- S24: 제목·캡처 원본 유지 checkbox·눈에 띄는 업무 상태와 native ON/OFF switch를 한 줄에 배치합니다. 반복 안내 두 줄과 하단 중복 업무 버튼은 제거합니다. 기존 toggle callback/대상 미등록 안내/우클릭 전환·고정 팝업·원본 모드·빠른 등록/IME는 유지하고 설명은 tooltip/accessibility로 제공합니다.
+
+S24 구현: `DashboardController.render/toggleWork`, `MenuWorkSwitch.acceptsFirstMouse`. 28 point header의 한 줄 title/원본 checkbox/고대비 굵은 업무 label·상태점/native switch와 tooltip을 사용하고 기존 toggle callback을 호출합니다. native self-test는 동일 title row·switch state/action/첫 클릭 정책·접근성 및 중복 footer 제거를 확인합니다.

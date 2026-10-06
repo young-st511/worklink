@@ -107,3 +107,14 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - 두 병렬 스펙/코드 리뷰 추가 blocker 없음. backend/통신/원본 처리 코드는 변경하지 않았습니다. 실제 제품 popup mouse·hover·브라우저 클릭은 CUA 접근 거부로 미검증이며 이를 다른 UI 조작으로 우회하지 않았습니다.
 
 `/Applications`의 기존 설치를 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·데이터·원격 헬퍼는 변경하지 않았습니다. 제품 앱 자동 재시작 및 GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.
+
+## 상단 한 줄 업무 제어
+
+2026-10-06 title과 원본 유지 checkbox의 같은 row 배치 및 더 명확한 업무 제어 피드백을 합쳤습니다. 90 point header를 28 point 한 줄로 줄이고 title·checkbox·상태점/고대비 굵은 ON/OFF label·native NSSwitch를 배치했습니다. 반복 안내 두 줄과 하단 중복 업무 버튼은 제거하고 tooltip/accessibility 도움말을 유지했습니다. 본문 viewport는 62 point 늘었으며 팝업 frame/fitting 크기는 그대로입니다.
+
+- native 회귀 테스트를 먼저 추가해 `header controls are not in compact title row` 실패를 확인한 후 구현했습니다. same title row·28 point header·ON state·기존 toggle callback 1회·접근성 label·firstMouse 허용 정책·하단 중복 control 제거와 기존 전체 native self-test를 통과했습니다. 기존 대상 미등록 안내와 메뉴바 우클릭은 같은 AppDelegate.toggle 흐름을 사용합니다.
+- NSSwitch는 isContinuous=false로 한 번의 변경을 전달하며 accessory popup에서 첫 mouse click을 허용합니다. [Apple NSSwitch 문서](https://developer.apple.com/documentation/appkit/nsswitch)와 [first mouse 문서](https://developer.apple.com/documentation/appkit/nsview/acceptsfirstmouse(for:))를 참고했습니다. 실제 첫 mouse click을 자동 검증한 것은 아닙니다.
+- ON/OFF·원본 유지·1/5포트의 light/dark AppKit 렌더를 열어 한 줄 배치·상태 대비·잘림/겹침 없음과 더 넓어진 본문을 확인했습니다. Go race/test/vet·앱 아이콘 검사 통과. 두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어는 최신 Swift 소스를 별도 임시 앱으로 빌드해 전체 native 테스트도 통과했습니다.
+- 실제 시스템 외형/제품 popup mouse와 hover는 CUA 접근 거부로 미검증이며 우회하지 않았습니다. backend/SSH/원본 처리 코드는 변경하지 않았습니다.
+
+`/Applications`의 기존 설치를 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·전송 데이터는 변경하지 않았고 제품 앱 자동 재시작/GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.

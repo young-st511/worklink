@@ -13,6 +13,10 @@ final class AppearanceBackgroundView: NSView {
   }
 }
 
+final class MenuWorkSwitch: NSSwitch {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class DashboardController: NSViewController, NSTextFieldDelegate {
   static let panelSize = NSSize(width: 380, height: 460)
   private(set) var bodyScroll: NSScrollView?
@@ -167,7 +171,23 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     view.subviews.filter { $0 !== bodyScroll }.forEach { $0.removeFromSuperview() }
     refreshQuickControls()
     let title = label("Worklink", size: 16, bold: true)
-    let status = label(state.on ? "업무 ON" : "업무 OFF", size: 11, color: .secondaryLabelColor)
+    title.maximumNumberOfLines = 1
+    let status = label(
+      state.on ? "업무 ON" : "업무 OFF", size: 13, color: .labelColor,
+      bold: true)
+    status.maximumNumberOfLines = 1
+    status.widthAnchor.constraint(equalToConstant: 56).isActive = true
+    let workSwitch = MenuWorkSwitch(frame: .zero)
+    workSwitch.state = state.on ? .on : .off
+    workSwitch.isContinuous = false
+    workSwitch.target = self
+    workSwitch.action = #selector(toggleWork)
+    workSwitch.toolTip =
+      state.on ? "업무 모드를 끕니다. 이미지 전달과 서버 연결을 중지합니다." : "업무 모드를 켭니다. 이미지 전달과 등록 서버 연결을 시작합니다."
+    workSwitch.setAccessibilityLabel("업무 모드")
+    workSwitch.setAccessibilityHelp(workSwitch.toolTip)
+    workSwitch.widthAnchor.constraint(equalToConstant: 54).isActive = true
+    workSwitch.heightAnchor.constraint(equalToConstant: 24).isActive = true
     let keep = ActionButton("캡처 원본 유지") { [weak self] in
       guard let self else { return }
       self.changeClipboardMode?(!self.preservesImage)
@@ -175,27 +195,19 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     keep.setButtonType(.switch)
     keep.state = preservesImage ? .on : .off
     keep.font = .systemFont(ofSize: 11)
-    let heading = horizontal([title, status])
-    heading.heightAnchor.constraint(equalToConstant: 22).isActive = true
     keep.heightAnchor.constraint(equalToConstant: 22).isActive = true
     keep.toolTip = "켜면 캡처 원본을 유지하고, 끄면 전송 완료 시 경로를 자동 복사합니다."
-    func headerLine(_ text: String, size: CGFloat) -> NSTextField {
-      let field = label(text, size: size, color: .secondaryLabelColor)
-      field.maximumNumberOfLines = 1
-      field.lineBreakMode = .byTruncatingTail
-      field.heightAnchor.constraint(equalToConstant: 14).isActive = true
-      field.toolTip = text
-      return field
-    }
-    let header = vertical(
-      [
-        heading,
-        headerLine(state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11),
-        keep,
-        headerLine(
-          preservesImage ? "자동 전송 후에도 로컬 이미지를 유지합니다." : "전송 완료 시 원격 경로를 자동 복사합니다.", size: 10),
-      ], spacing: 6)
-    header.heightAnchor.constraint(equalToConstant: 90).isActive = true
+    keep.setAccessibilityHelp(keep.toolTip)
+    let statusDot = NSImageView(
+      image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil) ?? NSImage())
+    statusDot.contentTintColor = state.on ? .systemGreen : .secondaryLabelColor
+    statusDot.widthAnchor.constraint(equalToConstant: 6).isActive = true
+    statusDot.heightAnchor.constraint(equalToConstant: 6).isActive = true
+    let space = NSView()
+    let header = horizontal(
+      [title, space, keep, horizontal([statusDot, status, workSwitch], spacing: 4)], spacing: 8)
+    header.distribution = .fill
+    header.heightAnchor.constraint(equalToConstant: 28).isActive = true
     var sections: [NSView] = []
     if !notice.isEmpty {
       sections.append(
@@ -287,7 +299,6 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       [
         separator(),
         horizontal([
-          ActionButton(state.on ? "업무 종료" : "업무 시작") { [weak self] in self?.toggle?() },
           ActionButton("설정…") { [weak self] in self?.settings?() },
           ActionButton("종료") { [weak self] in self?.quit?() },
         ]),
@@ -351,6 +362,7 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     scroll.reflectScrolledClipView(scroll.contentView)
     view.needsDisplay = true
   }
+  @objc private func toggleWork() { toggle?() }
   private func compactPortRow(_ port: PortConfig, state: CoreState) -> NSView {
     let connection = state.ports.first { $0.id == port.id }
     let ready =
