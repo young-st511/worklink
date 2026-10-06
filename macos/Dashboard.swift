@@ -1,5 +1,18 @@
 import AppKit
 
+final class AppearanceBackgroundView: NSView {
+  override var wantsUpdateLayer: Bool { true }
+  override func updateLayer() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    }
+  }
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    needsDisplay = true
+  }
+}
+
 final class DashboardController: NSViewController {
   static let panelSize = NSSize(width: 380, height: 460)
   private(set) var bodyScroll: NSScrollView?
@@ -31,7 +44,7 @@ final class DashboardController: NSViewController {
   var expanded: Set<String> = []
   private var lastState: CoreState?
   override func loadView() {
-    view = NSView(frame: NSRect(origin: .zero, size: Self.panelSize))
+    view = AppearanceBackgroundView(frame: NSRect(origin: .zero, size: Self.panelSize))
     view.wantsLayer = true
   }
   func render(_ state: CoreState) {
@@ -238,6 +251,6 @@ final class DashboardController: NSViewController {
     let offset = min(scrollOffset, max(0, height - scroll.contentSize.height))
     scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
     scroll.reflectScrolledClipView(scroll.contentView)
-    view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+    view.needsDisplay = true
   }
 }

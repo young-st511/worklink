@@ -37,6 +37,7 @@ func fixtureState(on: Bool = true) -> CoreState {
 
 func renderNative(_ view: NSView, to url: URL) throws {
   view.layoutSubtreeIfNeeded()
+  view.displayIfNeeded()
   guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
     throw NSError(domain: "Worklink QA", code: 1)
   }
@@ -86,6 +87,22 @@ func renderPreviews(_ directory: URL) throws {
       window.close()
     }
   }
+  // Capture the same view through appearance transitions without another state render.
+  let live = DashboardController()
+  var liveState = fixtureState()
+  liveState.config.ports = []
+  live.render(liveState)
+  let liveWindow = NSWindow(
+    contentRect: live.view.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+  liveWindow.contentView = live.view
+  for (index, mode) in [NSAppearance.Name.aqua, .darkAqua, .aqua].enumerated() {
+    liveWindow.appearance = NSAppearance(named: mode)
+    try renderNative(
+      live.view,
+      to: directory.appendingPathComponent(
+        "transition-\(index)-\(mode == .aqua ? "light" : "dark").png"))
+  }
+  liveWindow.close()
   let bridge = CoreBridge()
   bridge.state = fixtureState()
   let settings = SettingsController(bridge: bridge, loginEnabled: false)
@@ -290,6 +307,47 @@ func nativeSelfTest() throws {
   panel.resetScroll()
   try require(
     panel.bodyScroll?.contentView.bounds.origin.y == 0, "reopened menu did not reset to top")
+  let live = DashboardController()
+  live.render(fixtureState())
+  let hostWindow = NSWindow(
+    contentRect: live.view.bounds, styleMask: .borderless, backing: .buffered, defer: false)
+  hostWindow.contentView = live.view
+  defer { hostWindow.close() }
+  live.bodyScroll?.contentView.scroll(to: NSPoint(x: 0, y: 40))
+  let children = live.view.subviews.map { ObjectIdentifier($0) }
+  let offset = live.bodyScroll?.contentView.bounds.origin
+  var shades: [CGFloat] = []
+  for mode in [NSAppearance.Name.aqua, .darkAqua, .aqua] {
+    let appearance = NSAppearance(named: mode)!
+    hostWindow.appearance = appearance
+    live.view.layoutSubtreeIfNeeded()
+    live.view.displayIfNeeded()
+    guard let rep = live.view.bitmapImageRepForCachingDisplay(in: live.view.bounds) else {
+      throw NSError(domain: "Worklink QA", code: 1)
+    }
+    live.view.cacheDisplay(in: live.view.bounds, to: rep)
+    guard let pixel = rep.colorAt(x: rep.pixelsWide - 10, y: 10)?.usingColorSpace(.sRGB) else {
+      throw NSError(domain: "Worklink QA", code: 1)
+    }
+    var expected: NSColor!
+    appearance.performAsCurrentDrawingAppearance {
+      expected = NSColor.windowBackgroundColor.usingColorSpace(.sRGB)
+    }
+    try require(
+      abs(pixel.redComponent - expected.redComponent) < 0.04,
+      "live appearance background did not follow window")
+    shades.append(pixel.redComponent)
+    try require(
+      live.view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == mode,
+      "view appearance did not follow window")
+    try require(
+      live.view.subviews.map { ObjectIdentifier($0) } == children
+        && live.bodyScroll?.contentView.bounds.origin == offset
+        && live.view.frame.size == fixedSize, "appearance switch rebuilt or moved menu")
+  }
+  try require(
+    shades[0] - shades[1] > 0.3 && abs(shades[0] - shades[2]) < 0.04,
+    "live light/dark/light transition failed")
   print(
     "Native clipboard/counter/OFF/format/Unicode URL/lock overlap/ready state/EOF tests passed.")
 }

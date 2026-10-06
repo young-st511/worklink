@@ -39,3 +39,9 @@ S15/S16 구현: `ClipboardPreferences.complete`, `AppDelegate.complete/copy/rest
 - S17: Worklink 연결 모티프의 macOS 앱 아이콘을 Icon Composer 벡터 레이어와 실제 Liquid Glass 재질로 제작. 밝은/어두운/mono appearance 렌더 확인, 앱 번들 아이콘 등록·Assets.car·이전 macOS용 icns 포함. 기존 14 이상 런타임과 메뉴바 ON/OFF 아이콘은 유지.
 
 S17 구현: `assets/Worklink.icon`, `scripts/build-icon.sh/build-legacy-icon.sh/render-icon.sh`, `build-app.sh` Info.plist 병합. native asset catalog의 IconImageStack 및 Aqua/DarkAqua/Tintable appearances, SVG vector layers와 고해상도 icon을 `verify-app-icon.py`로 확인합니다. native self-test는 icns decode 및 1024px 표현을 확인합니다.
+
+## 실시간 다크 모드 전환
+
+- S18: 열린 같은 팝업에서 appearance가 light→dark→light로 바뀔 때 글자와 배경이 함께 갱신됩니다. 재열기/업무 ON/OFF/새 state render를 요구하지 않습니다. 전환은 메뉴 크기·스크롤 위치·업무 상태를 바꾸지 않습니다.
+
+S18 구현: `AppearanceBackgroundView.updateLayer/viewDidChangeEffectiveAppearance`, `DashboardController.loadView/render`. `nativeSelfTest`는 같은 window/view에서 state를 다시 render하지 않고 light→dark→light의 실제 bitmap 픽셀과 크기·스크롤·자식 identity 유지를 확인합니다. `renderPreviews`는 동일 view의 전환 3개 PNG를 생성합니다.

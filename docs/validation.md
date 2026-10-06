@@ -68,3 +68,14 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - CUA에서 Icon Composer 접근이 거부되어 화면 조작 대신 Apple CLI 컴파일/렌더를 사용했습니다. 제품 앱의 실제 Finder/Dock 표시·외형 모드 전환·아이콘 캐시 갱신은 자동 UI 조작으로 검증하지 않았습니다.
 
 두 병렬 스펙/코드 리뷰 추가 blocker 없음. 코드 리뷰어가 별도 legacy 번들·공백을 포함한 리소스 경로·stale catalog 제거·서명 전 실패 중단을 확인했습니다. 설치된 앱은 atomic 교체 후 코드 서명·Info.plist/Assets.car/icns/실행 파일 hash 및 native 아이콘 등록 검증을 통과했습니다. 사용자 설정/전송 데이터/원격 헬퍼는 변경하지 않았으며 실행 중 제품 앱의 자동 재시작도 수행하지 않았습니다.
+
+## 실시간 다크 모드 배경 갱신
+
+2026-10-06 사용자 보고와 같은 고정 배경을 동일 view/window의 appearance 전환 테스트로 재현했습니다. 기존 `DashboardController.render`가 동적 NSColor를 CGColor로 한 번 해석해 CALayer에 보관하여 외형 전환 때 배경이 갱신되지 않았습니다. [Apple 다크 모드 공식 안내](https://developer.apple.com/documentation/uikit/supporting-dark-mode-in-your-interface)의 updateLayer 권고를 따라 root를 AppearanceBackgroundView로 바꾸고 effectiveAppearance 아래에서 배경색을 다시 해석합니다. appearance 변경 시에는 화면 갱신만 요청합니다.
+
+- 회귀 테스트를 먼저 작성해 `live appearance background did not follow window` 실패를 확인한 후 수정했습니다. 새 state render 없이 같은 NSWindow/view를 Aqua→DarkAqua→Aqua로 바꾼 실제 bitmap 배경 픽셀 검사, view appearance·크기·스크롤·자식 identity 검사 통과.
+- 동일 view를 유지한 전환 3개 PNG를 생성·열어 배경과 글자·버튼의 색상 변화, 고정 크기와 레이아웃을 시각 확인했습니다. 기존 light/dark/ON/OFF/설정 preview와 native self-test, Go race/test/vet, 앱 아이콘 리소스 검사도 통과했습니다.
+- 두 병렬 스펙/코드 리뷰 추가 blocker 없음. 초기 표시·재열기·기존 state render의 배경 갱신 경로를 검토했습니다. 업무·원본 클립보드·SSH 코드는 변경하지 않았습니다.
+- 테스트 window의 appearance 전환을 검증한 것이며 실제 macOS 시스템 외형 설정 토글이나 제품 팝업 마우스 조작을 확인한 것은 아닙니다. CUA 접근 거부를 우회하지 않았습니다.
+
+설치된 앱을 atomic 교체하고 서명과 빌드 파일 hash를 확인했습니다. 사용자 설정·전송 데이터·원격 헬퍼는 그대로 두었으며 실행 중 제품 앱을 자동 재시작하지 않았습니다. 공개 소스 검수 통과, local Git만 사용했습니다.
