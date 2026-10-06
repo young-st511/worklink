@@ -96,3 +96,14 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 - 실제 메뉴바 마우스 클릭·disabled hover 툴팁 표시·제품 NSPopover 재열기 동작은 CUA의 앱 접근 거부로 자동 조작하지 않았습니다. native 기능/속성/field editor와 렌더 검증을 그 대체 완료로 주장하지 않습니다.
 
 사용자가 옮긴 전체 사용자용 `/Applications/Worklink.app`의 기존 설치를 atomic 교체했습니다. 서명·Info.plist/실행 파일/아이콘/코어 hash와 아이콘 등록 검증을 통과했습니다. `~/Applications`에 새 복사본을 만들지 않았고 사용자 데이터·설정·원격 헬퍼는 변경하지 않았습니다. 제품 앱을 자동 재시작하지 않았습니다. 공개 소스 검수 통과, 로컬 Git만 사용했습니다.
+
+## 컴팩트 포트 목록
+
+2026-10-06 포트 목록을 collapsed 24 point 한 줄(dot/name/localhost:port/짧은 상태/chevron)과 3 point 간격으로 줄였습니다. 전체 URL 및 오류는 tooltip과 펼친 상세에 유지합니다. 관리 링크를 개발 서버 heading에 합치고 빠른 등록 안내는 높이가 고정된 한 줄로 줄였으며, 긴 안내는 tooltip으로 확인합니다. 일반 section 간격도 8 point로 줄였습니다.
+
+- 구현 전 `port rows are not compact single lines` native 테스트 실패를 확인한 후 구현했습니다. 완료 notice가 있는 5개 일반 포트의 각 행 24 point·기본 viewport 포함 여부, HTTPS/path/query/fragment가 있는 실제 콜백 및 tooltip, 펼치기 후 주소 복사·제목 확인 유지 검사가 통과했습니다.
+- 1/5/8개 포트와 펼친 상세의 light/dark AppKit PNG를 생성했습니다. 5개 목록·1개 목록·밝은/어두운 상세를 열어 잘림/겹침과 행 정렬을 시각 확인했습니다. 1개 포트에서는 최근 이미지의 복사 동작도 기본 화면에 보입니다.
+- 기존 고정 크기·원본 유지 전환·native field editor/커서/IME·빠른 등록·disabled tooltip·glyph 검증, Go race/test/vet와 앱 아이콘 검증도 통과했습니다.
+- 두 병렬 스펙/코드 리뷰 추가 blocker 없음. backend/통신/원본 처리 코드는 변경하지 않았습니다. 실제 제품 popup mouse·hover·브라우저 클릭은 CUA 접근 거부로 미검증이며 이를 다른 UI 조작으로 우회하지 않았습니다.
+
+`/Applications`의 기존 설치를 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·데이터·원격 헬퍼는 변경하지 않았습니다. 제품 앱 자동 재시작 및 GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.

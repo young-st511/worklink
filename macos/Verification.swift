@@ -87,6 +87,43 @@ func renderPreviews(_ directory: URL) throws {
       window.close()
     }
   }
+  for style in [NSAppearance.Name.aqua, .darkAqua] {
+    for count in [1, 5, 8] {
+      let portsPanel = DashboardController()
+      var state = fixtureState()
+      let base = state.config.ports[0]
+      state.config.ports = (0..<count).map { index in
+        var port = base
+        port.id = String(format: "%032x", index + 1)
+        port.name = ["프론트엔드", "API", "관리자", "문서", "스토리북", "미리보기", "테스트", "대시보드"][index]
+        port.localPort = 5190 + index
+        port.endpoint.remotePort = 5190 + index
+        return port
+      }
+      state.ports = state.config.ports.map {
+        PortStatus(id: $0.id, status: "ready", error: nil, reachable: true)
+      }
+      portsPanel.view.appearance = NSAppearance(named: style)
+      portsPanel.render(state)
+      let window = NSWindow(
+        contentRect: portsPanel.view.bounds, styleMask: .borderless, backing: .buffered,
+        defer: false)
+      window.contentView = portsPanel.view
+      try renderNative(
+        portsPanel.view,
+        to: directory.appendingPathComponent(
+          "ports-\(count)-\(style == .aqua ? "light" : "dark").png"))
+      if count == 1 {
+        portsPanel.expanded.insert(state.config.ports[0].id)
+        portsPanel.render(state)
+        try renderNative(
+          portsPanel.view,
+          to: directory.appendingPathComponent(
+            "ports-expanded-\(style == .aqua ? "light" : "dark").png"))
+      }
+      window.close()
+    }
+  }
   // Capture the same view through appearance transitions without another state render.
   let live = DashboardController()
   var liveState = fixtureState()
@@ -462,6 +499,66 @@ func nativeSelfTest() throws {
   }
   try require(
     try glyphBounds(activeGlyph) == glyphBounds(inactiveGlyph), "ON/OFF actual chain bounds differ")
+  func taggedViews(_ root: NSView, prefix: String) -> [NSView] {
+    (root.identifier?.rawValue.hasPrefix(prefix) == true ? [root] : [])
+      + root.subviews.flatMap { taggedViews($0, prefix: prefix) }
+  }
+  let compactPanel = DashboardController()
+  compactPanel.notice = "전송 완료 · 캡처 원본 유지 중. 필요할 때 경로를 복사하세요."
+  var compactState = fixtureState()
+  let base = compactState.config.ports[0]
+  compactState.config.ports = (0..<5).map { index in
+    var port = base
+    port.id = String(format: "%032x", index + 1)
+    port.name = "개발 서버 \(index + 1)"
+    port.localPort = 5200 + index
+    port.endpoint.remotePort = 5200 + index
+    port.endpoint.scheme = "https"
+    port.endpoint.query = "q=1"
+    port.endpoint.fragment = "view"
+    return port
+  }
+  compactState.ports = compactState.config.ports.map {
+    PortStatus(id: $0.id, status: "ready", error: nil, reachable: true)
+  }
+  compactPanel.render(compactState)
+  let compactRows = taggedViews(compactPanel.view, prefix: "port-row-")
+  try require(
+    compactRows.count == 5 && compactRows.allSatisfy { abs($0.frame.height - 24) < 0.1 },
+    "port rows are not compact single lines")
+  let document = compactPanel.bodyScroll!.documentView!
+  let viewport = compactPanel.bodyScroll!.contentView.bounds
+  try require(
+    compactRows.allSatisfy { viewport.contains($0.convert($0.bounds, to: document)) },
+    "five ports do not fit in initial viewport")
+  var opened: PortConfig?
+  compactPanel.open = { opened = $0 }
+  guard
+    let firstRow = compactRows.first(where: {
+      $0.identifier?.rawValue == "port-row-\(compactState.config.ports[0].id)"
+    })
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  guard
+    let addressButton = actionButtons(firstRow).first(where: {
+      $0.title.hasPrefix("localhost:")
+    })
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  try require(
+    addressButton.toolTip == "https://localhost:5200/preview?q=1#view",
+    "compact address lost full URL tooltip")
+  addressButton.performClick(nil)
+  try require(
+    opened?.endpoint.localURL(5200)?.absoluteString == "https://localhost:5200/preview?q=1#view"
+      && opened?.localPort == 5200,
+    "compact browser action changed target")
+  guard let disclosure = actionButtons(firstRow).first(where: { $0.title == "상세 보기" }) else {
+    throw NSError(domain: "Worklink QA", code: 1)
+  }
+  disclosure.performClick(nil)
+  try require(
+    actionButtons(compactPanel.view).contains { $0.title == "주소 복사" }
+      && actionButtons(compactPanel.view).contains { $0.title == "제목 확인" },
+    "compact disclosure removed details actions")
   let live = DashboardController()
   live.render(fixtureState())
   let hostWindow = NSWindow(

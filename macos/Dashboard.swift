@@ -74,8 +74,9 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     quickHost.heightAnchor.constraint(equalToConstant: 22).isActive = true
     quickAdd.widthAnchor.constraint(equalToConstant: 54).isActive = true
     quickAdd.heightAnchor.constraint(equalToConstant: 22).isActive = true
-    quickFeedback.maximumNumberOfLines = 2
-    quickFeedback.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    quickFeedback.maximumNumberOfLines = 1
+    quickFeedback.lineBreakMode = .byTruncatingTail
+    quickFeedback.heightAnchor.constraint(equalToConstant: 14).isActive = true
     return vertical([horizontal([quickAddress, quickHost, quickAdd]), quickFeedback], spacing: 4)
   }()
   private var quickInput: String {
@@ -212,65 +213,27 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       }
     }
     sections.append(separator())
-    sections.append(label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true))
+    let manage = ActionButton("관리…") { [weak self] in self?.settings?() }
+    manage.isBordered = false
+    manage.font = .systemFont(ofSize: 10)
+    manage.contentTintColor = .secondaryLabelColor
+    manage.toolTip = "서버 이름·로컬 포트·SSH 대상 설정"
+    let headingSpace = NSView()
+    let serverHeading = horizontal([
+      label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true), headingSpace, manage,
+    ])
+    serverHeading.distribution = .fill
+    serverHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
+    serverHeading.heightAnchor.constraint(equalToConstant: 18).isActive = true
+    sections.append(serverHeading)
     sections.append(quickForm)
     if state.config.ports.isEmpty {
       sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
     }
-    for port in state.config.ports {
-      let connection = state.ports.first { $0.id == port.id }
-      let ready = connection?.reachable == true
-      let text =
-        !state.on
-        ? "업무 OFF"
-        : !port.enabled
-          ? "감시 중지" : connection?.status == "conflict" ? "포트 충돌" : ready ? "연결 가능" : "서버 대기"
-      let name = ActionButton(port.displayName) { [weak self] in self?.open?(port) }
-      name.isBordered = false
-      name.alignment = .left
-      name.font = .systemFont(ofSize: 13, weight: .medium)
-      let dot = NSImageView(
-        image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: text) ?? NSImage()
-      )
-      dot.contentTintColor = ready && state.on ? .systemGreen : .secondaryLabelColor
-      dot.widthAnchor.constraint(equalToConstant: 8).isActive = true
-      dot.heightAnchor.constraint(equalToConstant: 8).isActive = true
-      let url = port.endpoint.localURL(port.localPort)?.absoluteString ?? "주소 확인 필요"
-      let address = ActionButton(url) { [weak self] in self?.open?(port) }
-      address.isBordered = false
-      address.alignment = .left
-      address.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-      address.lineBreakMode = .byTruncatingMiddle
-      address.widthAnchor.constraint(lessThanOrEqualToConstant: 340).isActive = true
-      let details = ActionButton(expanded.contains(port.id) ? "상세 접기" : "상세 보기") { [weak self] in
-        guard let self else { return }
-        if expanded.contains(port.id) { expanded.remove(port.id) } else { expanded.insert(port.id) }
-        if let state = lastState { render(state) }
-      }
-      details.isBordered = false
-      details.font = .systemFont(ofSize: 10)
-      details.contentTintColor = .secondaryLabelColor
-      var row: [NSView] = [
-        horizontal([dot, name, label(text, size: 10, color: .secondaryLabelColor)]), address,
-      ]
-      if let error = connection?.error { row.append(label(error, size: 11, color: .systemRed)) }
-      row.append(details)
-      if expanded.contains(port.id) {
-        row.append(
-          label(
-            "원격 \(port.host) / \(port.endpoint.remoteHost):\(port.endpoint.remotePort)", size: 11,
-            color: .secondaryLabelColor))
-        row.append(
-          horizontal([
-            ActionButton("주소 복사") {
-              NSPasteboard.general.clearContents()
-              NSPasteboard.general.setString(url, forType: .string)
-            }, ActionButton("제목 확인") { [weak self] in self?.titleRefresh?(port) },
-          ]))
-      }
-      sections.append(vertical(row, spacing: 2))
+    if !state.config.ports.isEmpty {
+      sections.append(
+        vertical(state.config.ports.map { compactPortRow($0, state: state) }, spacing: 3))
     }
-    sections.append(ActionButton("서버·SSH 대상 등록…") { [weak self] in self?.settings?() })
     sections.append(separator())
     sections.append(
       label(
@@ -330,7 +293,7 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
         ]),
       ], spacing: 10)
     // Keep the form's entire ancestry attached while updating dynamic rows.
-    let stack = bodyStack ?? vertical([], spacing: 10)
+    let stack = bodyStack ?? vertical([], spacing: 8)
     for previous in stack.arrangedSubviews where previous !== quickForm {
       stack.removeArrangedSubview(previous)
       previous.removeFromSuperview()
@@ -387,6 +350,91 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     scroll.contentView.scroll(to: NSPoint(x: 0, y: offset))
     scroll.reflectScrolledClipView(scroll.contentView)
     view.needsDisplay = true
+  }
+  private func compactPortRow(_ port: PortConfig, state: CoreState) -> NSView {
+    let connection = state.ports.first { $0.id == port.id }
+    let ready =
+      state.on && port.enabled && connection?.status == "ready" && connection?.reachable == true
+    let status =
+      !state.on
+      ? "OFF" : !port.enabled ? "중지" : connection?.status == "conflict" ? "충돌" : ready ? "연결" : "대기"
+    let statusHelp =
+      !state.on
+      ? "업무 OFF"
+      : !port.enabled
+        ? "감시 중지" : connection?.status == "conflict" ? "로컬 포트 충돌" : ready ? "연결 가능" : "서버 연결 대기"
+    let url = port.endpoint.localURL(port.localPort)?.absoluteString ?? "주소 확인 필요"
+    let dot = NSImageView(
+      image: NSImage(systemSymbolName: "circle.fill", accessibilityDescription: statusHelp)
+        ?? NSImage())
+    dot.contentTintColor = ready ? .systemGreen : status == "충돌" ? .systemRed : .secondaryLabelColor
+    dot.widthAnchor.constraint(equalToConstant: 6).isActive = true
+    dot.heightAnchor.constraint(equalToConstant: 6).isActive = true
+    let name = ActionButton(port.displayName) { [weak self] in self?.open?(port) }
+    name.isBordered = false
+    name.alignment = .left
+    name.font = .systemFont(ofSize: 12, weight: .medium)
+    name.lineBreakMode = .byTruncatingTail
+    name.toolTip = "\(port.displayName) · \(url)"
+    name.widthAnchor.constraint(equalToConstant: 132).isActive = true
+    name.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let address = ActionButton("localhost:\(port.localPort)") { [weak self] in self?.open?(port) }
+    address.isBordered = false
+    address.alignment = .left
+    address.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+    address.lineBreakMode = .byTruncatingMiddle
+    address.toolTip = url
+    address.setAccessibilityLabel(url)
+    address.widthAnchor.constraint(equalToConstant: 120).isActive = true
+    address.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let stateLabel = label(
+      status, size: 10, color: status == "충돌" ? .systemRed : .secondaryLabelColor)
+    stateLabel.maximumNumberOfLines = 1
+    stateLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
+    stateLabel.heightAnchor.constraint(equalToConstant: 14).isActive = true
+    stateLabel.toolTip = state.on && port.enabled ? (connection?.error ?? statusHelp) : statusHelp
+    stateLabel.setAccessibilityHelp(stateLabel.toolTip)
+    let isExpanded = expanded.contains(port.id)
+    let details = ActionButton(isExpanded ? "상세 접기" : "상세 보기") { [weak self] in
+      guard let self else { return }
+      if expanded.contains(port.id) { expanded.remove(port.id) } else { expanded.insert(port.id) }
+      if let state = lastState { render(state) }
+    }
+    details.isBordered = false
+    details.image = NSImage(
+      systemSymbolName: isExpanded ? "chevron.down" : "chevron.right",
+      accessibilityDescription: details.title)
+    details.imagePosition = .imageOnly
+    details.contentTintColor = .secondaryLabelColor
+    details.toolTip = details.title
+    details.setAccessibilityLabel(details.title)
+    details.widthAnchor.constraint(equalToConstant: 20).isActive = true
+    details.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let spacer = NSView()
+    let primary = horizontal([dot, name, address, stateLabel, spacer, details], spacing: 4)
+    primary.distribution = .fill
+    primary.identifier = NSUserInterfaceItemIdentifier("port-row-\(port.id)")
+    primary.widthAnchor.constraint(equalToConstant: 344).isActive = true
+    primary.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    guard isExpanded else { return primary }
+    var rows: [NSView] = [
+      primary, label(url, size: 10, color: .secondaryLabelColor),
+      label(
+        "원격 \(port.host) / \(port.endpoint.remoteHost):\(port.endpoint.remotePort)", size: 10,
+        color: .secondaryLabelColor),
+    ]
+    if let error = connection?.error, !error.isEmpty {
+      rows.append(label(error, size: 10, color: .systemRed))
+    }
+    rows.append(
+      horizontal([
+        ActionButton("주소 복사") {
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(url, forType: .string)
+        },
+        ActionButton("제목 확인") { [weak self] in self?.titleRefresh?(port) },
+      ]))
+    return vertical(rows, spacing: 3)
   }
   private func disabledReason(_ job: ImageJob, state: CoreState, original: Bool) -> String? {
     if expired.contains(job.id) { return "원격 파일이 만료되었습니다." }

@@ -55,3 +55,9 @@ S18 구현: `AppearanceBackgroundView.updateLayer/viewDidChangeEffectiveAppearan
 - S22: 팝업 개발 서버 영역에서 포트·단일 localhost URL을 입력해 등록할 수 있습니다. 수동 등록한 SSH 대상 중 현재 이미지 대상을 기본 선택하고 다른 대상을 고를 수 있습니다. OFF에서도 등록하며 기존 parser/config revision 검증을 사용합니다. 완료 시 입력을 비우고 오류/중복/모호한 입력은 draft를 유지합니다. 주기적 상태 render 중 입력과 선택·커서/IME를 보존합니다. 추가 debounce polling/리스너 탐색은 없습니다.
 
 S19–S22 구현: `AppDelegate.setClipboardMode/registerQuickPort/updateIcon`, `DashboardController.render/refreshQuickControls/disabledReason`, `ActionButton.setDisabledReason`, `MenuBarGlyph`. root/frame/fitting 및 header 행 크기 고정, notice 보존, 원인별 tooltip/accessibilityHelp, 고정 18 point template glyph, popup의 persistent SSH/포트 등록 폼과 기존 parse/save_config 경로를 사용합니다.
+
+## 컴팩트한 포트 목록
+
+- S23: 기본 포트 행은 상태점·이름·짧은 localhost 주소·상태·펼치기를 한 줄(24 point)에 표시합니다. 전체 URL과 오류는 tooltip 및 상세에서 확인하고, 주소/이름 클릭은 기존 URL의 scheme/path/query/fragment를 유지합니다. 포트 행 간 간격을 줄이고 관리 링크는 개발 서버 heading에 합칩니다. 빠른 등록 안내는 높이를 고정한 한 줄로 표시합니다. 5개 일반 포트가 기본 body viewport에 들어가고 팝업 크기·모드 전환·입력/cursor/IME 보존은 유지합니다.
+
+S23 구현: `DashboardController.compactPortRow/render/quickForm`. 24 point 행/3 point gap, 전체 URL·오류 tooltip/펼친 상세, heading의 관리 링크와 고정 한 줄 안내를 사용합니다. `nativeSelfTest`는 일반 완료 notice가 있는 5개 포트의 viewport 적합·행 높이, HTTPS/path/query/fragment를 가진 브라우저 콜백·상세 동작을 확인합니다.
