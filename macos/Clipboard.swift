@@ -28,11 +28,38 @@ enum ClipboardReader {
     guard bytes.count <= maximum else { throw ClipboardFailure.tooLarge }
     return ClipboardImage(bytes: bytes, ext: ext, count: count)
   }
+  static func restore(
+    _ bytes: Data, extension ext: String, board: NSPasteboard, expectedCount: Int, allowed: Bool
+  ) -> Bool {
+    guard allowed, board.changeCount == expectedCount, !bytes.isEmpty,
+      let type = types.first(where: { $0.1 == (ext == "jpeg" ? "jpg" : ext) })?.0
+    else { return false }
+    board.clearContents()
+    return board.setData(bytes, forType: type)
+  }
   static func replaceWithPath(
     _ path: String, board: NSPasteboard, expectedCount: Int, allowed: Bool
   ) -> Bool {
     guard allowed, board.changeCount == expectedCount else { return false }
     board.clearContents()
     return board.setString(path, forType: .string)
+  }
+}
+
+enum ClipboardCompletion { case originalKept, pathCopied, clipboardUnchanged }
+final class ClipboardPreferences {
+  private let defaults: UserDefaults
+  init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+  var preservesImage: Bool {
+    get { defaults.bool(forKey: "worklink.preserveClipboardImage") }
+    set { defaults.set(newValue, forKey: "worklink.preserveClipboardImage") }
+  }
+  func complete(_ path: String, board: NSPasteboard, expectedCount: Int, allowed: Bool)
+    -> ClipboardCompletion
+  {
+    if preservesImage { return .originalKept }
+    return ClipboardReader.replaceWithPath(
+      path, board: board, expectedCount: expectedCount, allowed: allowed)
+      ? .pathCopied : .clipboardUnchanged
   }
 }

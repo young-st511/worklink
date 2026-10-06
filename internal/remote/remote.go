@@ -63,6 +63,7 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 		lease.Reset(2 * time.Minute)
 		res := Response{Version: wire.Version}
 		var err error
+		var download *os.File
 		if q.Version != wire.Version {
 			res.Error = "프로토콜 버전이 다릅니다"
 			wire.Write(w, res)
@@ -102,6 +103,18 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 			} else if err == nil {
 				res.Exists = true
 				res.Image = &i
+			}
+		case "download":
+			var image model.Image
+			image, err = s.Verify(q.ID)
+			if errors.Is(err, os.ErrNotExist) {
+				err = errors.New("원격 이미지가 정리되어 원본이 만료됐습니다")
+			}
+			if err == nil {
+				download, err = os.Open(image.Path)
+				if err == nil {
+					res.Image = &image
+				}
 			}
 		case "list":
 			res.Images, err = s.List()
@@ -154,7 +167,17 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 			res.Error = err.Error()
 		}
 		if e := wire.Write(w, res); e != nil {
+			if download != nil {
+				download.Close()
+			}
 			return e
+		}
+		if download != nil {
+			_, transferErr := io.CopyN(w, download, res.Image.Size)
+			download.Close()
+			if transferErr != nil {
+				return transferErr
+			}
 		}
 		// A rejected upload may leave unread payload. Never reuse its stream.
 		if q.Op == "upload" && err != nil {

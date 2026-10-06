@@ -49,7 +49,7 @@ func renderPreviews(_ directory: URL) throws {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   for style in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = NSAppearance(named: style)!
-    for name in ["off", "on", "error"] {
+    for name in ["off", "on", "error", "keep", "images"] {
       let controller = DashboardController()
       controller.view.appearance = appearance
       var state = fixtureState(on: name != "off")
@@ -60,7 +60,12 @@ func renderPreviews(_ directory: URL) throws {
         controller.notice = "전송 완료 · 클립보드가 바뀌어 경로 복사를 생략했습니다."
       }
       if name == "on" { controller.copied.insert(state.jobs[0].id) }
-      controller.expanded.insert(state.config.ports[0].id)
+      if name == "keep" || name == "images" {
+        controller.preservesImage = name == "keep"
+        state.config.ports = []
+        state.jobs = Array(repeating: state.jobs[0], count: 5)
+      }
+      if let port = state.config.ports.first { controller.expanded.insert(port.id) }
       appearance.performAsCurrentDrawingAppearance { controller.render(state) }
       let window = NSWindow(
         contentRect: controller.view.bounds, styleMask: .borderless, backing: .buffered,
@@ -101,6 +106,75 @@ func nativeSelfTest() throws {
   board.setData(original, forType: .png)
   let image = try ClipboardReader.read(board, maximum: 1024)
   try require(image?.bytes == original && image?.ext == "png", "clipboard bytes changed")
+  let suite = "dev.worklink.qa.preferences.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let preferences = ClipboardPreferences(defaults: defaults)
+  try require(!preferences.preservesImage, "new preference unexpectedly changed legacy mode")
+  preferences.preservesImage = true
+  let preservedCount = board.changeCount
+  try require(
+    preferences.complete(
+      "/tmp/image.png", board: board, expectedCount: preservedCount, allowed: true)
+      == .originalKept, "keep mode reported path copied")
+  try require(
+    board.data(forType: .png) == original && board.changeCount == preservedCount,
+    "keep mode overwrote local capture")
+  try require(ClipboardPreferences(defaults: defaults).preservesImage, "mode not persisted")
+  preferences.preservesImage = false
+  try require(board.changeCount == preservedCount, "switching mode wrote clipboard")
+  try require(
+    preferences.complete(
+      "/tmp/image.png", board: board, expectedCount: preservedCount, allowed: true) == .pathCopied,
+    "path mode failed")
+  board.clearContents()
+  board.setData(original, forType: .png)
+  let restoreCount = board.changeCount
+  try require(
+    ClipboardReader.restore(
+      original, extension: "png", board: board, expectedCount: restoreCount, allowed: true),
+    "restore failed")
+  try require(board.data(forType: .png) == original, "restore reencoded image")
+  let outdated = board.changeCount
+  board.clearContents()
+  board.setString("newer content", forType: .string)
+  try require(
+    !ClipboardReader.restore(
+      original, extension: "png", board: board, expectedCount: outdated, allowed: true),
+    "restore overwrote newer clipboard")
+  try require(board.string(forType: .string) == "newer content", "newer clipboard lost")
+  board.clearContents()
+  board.setData(original, forType: .png)
+  let delegate = AppDelegate()
+  delegate.clipboardBoard = board
+  delegate.clipboardPreferences = preferences
+  delegate.bridge.state = fixtureState()
+  delegate.desiredOn = true
+  var delayedJob = fixtureState().jobs[0]
+  delayedJob.clipboardCount = board.changeCount
+  preferences.preservesImage = true
+  delegate.complete(delayedJob)
+  try require(
+    board.data(forType: .png) == original && board.changeCount == delayedJob.clipboardCount,
+    "in-flight keep choice ignored")
+  preferences.preservesImage = false
+  delegate.complete(delayedJob)
+  try require(
+    board.string(forType: .string) == delayedJob.remotePath, "in-flight copy choice ignored")
+  board.clearContents()
+  board.setData(original, forType: .png)
+  delegate.lastCount = board.changeCount
+  delegate.observeClipboard()
+  try require(!delegate.captureBusy, "app-restored image re-enqueued")
+  for ext in ["png", "jpg", "jpeg", "tiff", "heic", "heif", "webp"] {
+    let before = board.changeCount
+    try require(
+      ClipboardReader.restore(
+        original, extension: ext, board: board, expectedCount: before, allowed: true),
+      "original format restore failed")
+    let type = ClipboardReader.types.first { $0.1 == (ext == "jpeg" ? "jpg" : ext) }!.0
+    try require(board.data(forType: type) == original, "restore changed original format/bytes")
+  }
   let old = board.changeCount
   board.clearContents()
   board.setString("new user text", forType: .string)
@@ -176,6 +250,7 @@ func nativeSelfTest() throws {
   var stoppedWithJobs = fixtureState()
   stoppedWithJobs.on = false
   for state in [fixtureState(on: false), fixtureState(), stoppedWithJobs, crowded] {
+    panel.preservesImage.toggle()
     panel.render(state)
     try require(
       panel.view.frame.size == fixedSize && panel.preferredContentSize == fixedSize,
@@ -199,6 +274,15 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
   let board = NSPasteboard(
     name: NSPasteboard.Name("dev.worklink.qa.integration.\(UUID().uuidString)"))
   delegate.clipboardBoard = board
+  let suite = "dev.worklink.qa.integration.preferences.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  delegate.clipboardPreferences = ClipboardPreferences(defaults: defaults)
+  let preserve = ProcessInfo.processInfo.environment["WORKLINK_QA_PRESERVE"] == "1"
+  delegate.clipboardPreferences.preservesImage = preserve
+  delegate.dashboard.preservesImage = preserve
+  var completed = false
+  var capturedCount = 0
+  var baselineJobs = Set<String>()
   var toggled = false
   var captured = false
   delegate.bridge.onState = { [weak delegate] state in
@@ -211,23 +295,67 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
     }
     if state.on && state.hosts.contains(where: { $0.status == "connected" }) && !captured {
       captured = true
+      baselineJobs = Set(state.jobs.map { $0.id })
       board.clearContents()
       board.setData(data, forType: .png)
+      capturedCount = board.changeCount
     }
   }
   delegate.bridge.onComplete = { [weak delegate] job in
     guard let delegate else { return }
+    guard !completed else { return }
+    completed = true
     delegate.complete(job)
     let replaced = board.string(forType: .string) == job.remotePath
-    let result: [String: Any] = [
-      "native_clipboard": true, "path_replaced": replaced, "sha256": job.sha256,
-      "remote_path": job.remotePath ?? "", "byte_count": job.size,
-    ]
-    if let bytes = try? JSONSerialization.data(withJSONObject: result, options: .sortedKeys) {
-      FileHandle.standardOutput.write(bytes + Data([10]))
+    let preserved = board.data(forType: .png) == data && board.changeCount == capturedCount
+    // Exercise explicit path copy even when original preservation is selected.
+    let beforeManualCopy = board.changeCount
+    delegate.copy(job)
+    var phase = 0
+    var pathCopied = false
+    var restoreCount = 0
+    var restoreStarted = Date()
+    Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
+      if phase == 0 {
+        guard board.string(forType: .string) == job.remotePath,
+          board.changeCount != beforeManualCopy
+        else { return }
+        pathCopied = true
+        phase = 1
+        delegate.restore(job)
+        restoreStarted = Date()
+        return
+      }
+      if phase == 1 {
+        guard delegate.dashboard.restoring == nil else { return }
+        phase = 2
+        restoreCount = board.changeCount
+        restoreStarted = Date()
+      }
+      guard Date().timeIntervalSince(restoreStarted) >= 2 else { return }
+      let noRepeat =
+        delegate.bridge.state?.jobs.filter {
+          $0.sha256 == job.sha256 && !baselineJobs.contains($0.id)
+        }.count == 1
+      let restored = board.data(forType: .png) == data && board.changeCount == restoreCount
+      let result: [String: Any] = [
+        "native_clipboard": true, "path_replaced": replaced, "original_preserved": preserved,
+        "manual_path_copied": pathCopied, "original_restored": restored,
+        "restore_no_reupload": noRepeat,
+        "scratch_removed":
+          (try? FileManager.default.contentsOfDirectory(
+            atPath: delegate.root.appendingPathComponent("restores").path
+          ).isEmpty) == true,
+        "sha256": job.sha256, "byte_count": job.size,
+      ]
+      if let bytes = try? JSONSerialization.data(withJSONObject: result, options: .sortedKeys) {
+        FileHandle.standardOutput.write(bytes + Data([10]))
+      }
+      timer.invalidate()
+      defaults.removePersistentDomain(forName: suite)
+      board.releaseGlobally()
+      NSApp.terminate(nil)
     }
-    board.releaseGlobally()
-    NSApp.terminate(nil)
   }
   Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { _ in
     fputs("Native QA timed out\n", stderr)

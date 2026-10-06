@@ -71,14 +71,15 @@ func (p *peer) conn() transport.Connection     { p.mu.Lock(); defer p.mu.Unlock(
 func (p *peer) setConn(c transport.Connection) { p.mu.Lock(); defer p.mu.Unlock(); p.connection = c }
 
 type Engine struct {
-	mu      sync.Mutex
-	store   *storage.Store
-	state   State
-	connect Connector
-	emit    func(Event)
-	cancel  context.CancelFunc
-	peers   map[string]*peer
-	wake    chan struct{}
+	mu        sync.Mutex
+	restoreMu sync.Mutex
+	store     *storage.Store
+	state     State
+	connect   Connector
+	emit      func(Event)
+	cancel    context.CancelFunc
+	peers     map[string]*peer
+	wake      chan struct{}
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -690,4 +691,89 @@ func (e *Engine) CopyPath(id string) (string, error) {
 		}
 	}
 	return "", errors.New("완료한 이미지 경로가 없습니다")
+}
+
+type RestoredImage struct {
+	Path      string `json:"path"`
+	Extension string `json:"extension"`
+	Size      int64  `json:"size"`
+}
+
+func (e *Engine) RestoreOriginal(id string) (result RestoredImage, err error) {
+	if !e.restoreMu.TryLock() {
+		return result, errors.New("원본 이미지를 가져오는 중입니다")
+	}
+	defer e.restoreMu.Unlock()
+	snap := e.Snapshot()
+	if !snap.On {
+		return result, errors.New("원격 연결을 먼저 켜 주세요")
+	}
+	var job Job
+	for _, j := range snap.Jobs {
+		if j.ID == id && j.Status == "complete" {
+			job = j
+			break
+		}
+	}
+	if job.ID == "" {
+		return result, errors.New("완료된 이미지를 찾을 수 없습니다")
+	}
+	if job.Size <= 0 || job.Size > snap.Config.Limits.ImageBytes {
+		return result, errors.New("원본 이미지 크기 제한을 초과했습니다")
+	}
+	e.mu.Lock()
+	p := e.peers[job.Host]
+	e.mu.Unlock()
+	if p == nil {
+		return result, errors.New("원격 연결을 먼저 켜 주세요")
+	}
+	connection := p.conn()
+	if connection == nil {
+		return result, errors.New("원격 연결을 먼저 켜 주세요")
+	}
+	downloader, ok := connection.(interface {
+		Download(context.Context, remote.Request, io.Writer) (remote.Response, error)
+	})
+	if !ok {
+		return result, errors.New("원본 복사를 지원하는 연결이 아닙니다")
+	}
+	dir := filepath.Join(e.store.Root, "restores")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return result, err
+	}
+	f, err := os.CreateTemp(dir, "original-*")
+	if err != nil {
+		return result, err
+	}
+	path := f.Name()
+	keep := false
+	defer func() {
+		f.Close()
+		if !keep {
+			os.Remove(path)
+		}
+	}()
+	hash := sha256.New()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	response, err := downloader.Download(ctx, remote.Request{Op: "download", ID: job.ID, Size: job.Size, SHA256: job.SHA256, Extension: job.Extension}, io.MultiWriter(f, hash))
+	if err != nil {
+		return result, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return result, err
+	}
+	if response.Image == nil || response.Image.ID != job.ID || response.Image.Extension != job.Extension || info.Size() != job.Size || fmt.Sprintf("%x", hash.Sum(nil)) != job.SHA256 {
+		return result, errors.New("원본 이미지 검증에 실패했습니다")
+	}
+	current := e.Snapshot()
+	if !current.On || current.Generation != snap.Generation {
+		return result, errors.New("업무 상태가 변경됐습니다")
+	}
+	if err = f.Close(); err != nil {
+		return result, err
+	}
+	keep = true
+	return RestoredImage{Path: path, Extension: job.Extension, Size: job.Size}, nil
 }

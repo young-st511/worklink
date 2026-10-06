@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"testing"
 
 	"github.com/young-st511/worklink/internal/model"
@@ -63,5 +64,32 @@ func TestBadVersionAndTruncatedUpload(t *testing.T) {
 		if e := wire.Read(&out, &r); e != nil || r.Error == "" {
 			t.Fatal(r, e)
 		}
+	}
+}
+
+func TestDownloadOriginalAndNextFrame(t *testing.T) {
+	s, _ := storage.Open(t.TempDir(), model.DefaultConfig().Limits)
+	data := []byte{0, 255, 4, 3}
+	id := model.NewID()
+	_, err := s.Receive(id, "png", fmt.Sprintf("%x", sha256.Sum256(data)), int64(len(data)), bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var in, out bytes.Buffer
+	wire.Write(&in, Request{Version: 1, Op: "download", ID: id})
+	wire.Write(&in, Request{Version: 1, Op: "hello"})
+	if err = Serve(&in, &out, s); err != nil {
+		t.Fatal(err)
+	}
+	var r Response
+	if err = wire.Read(&out, &r); err != nil || r.Error != "" || r.Image == nil {
+		t.Fatal(r, err)
+	}
+	got := make([]byte, len(data))
+	if _, err = io.ReadFull(&out, got); err != nil || !bytes.Equal(got, data) {
+		t.Fatal(got, err)
+	}
+	if err = wire.Read(&out, &r); err != nil || r.Root != s.Root {
+		t.Fatal("download desynchronized channel", r, err)
 	}
 }

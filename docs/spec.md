@@ -26,3 +26,10 @@ S6–S9 및 S3 로컬 ACK 후 삭제 구현: `transport.Connect/SSH.Call/Forward
 S10–S14 구현: `macos/AppDelegate`, `DashboardController`, `SettingsController`, `ClipboardReader`, `CoreBridge`, `install.CleanupPlist/CleanupJob/Remote`, `scripts/build-app.sh`. Go race/vet, native 회귀 테스트, 실제 SSH+named pasteboard 원본 PNG·경로 교체 및 AppKit 밝은/어두운/OFF/오류/설정 뷰 렌더 확인. 실제 마우스·브라우저 열기·권한·자동 시작·일일 작업 활성화는 환경 검증으로 남았으며 validation.md에 구분했습니다.
 
 S10 팝업 레이아웃은 380×460 point로 고정하고 header/footer를 목록 스크롤 밖에 유지합니다. `DashboardController.render/resetScroll`, `AppDelegate.showMenu`와 native 회귀 테스트로 상태 전환·재열기 잘림을 보완했습니다.
+
+## 클립보드 모드와 원본 복사 수용 기준
+
+- S15: 메뉴바 `캡처 원본 유지` 선택은 재실행에도 유지, 초기 기본은 기존 자동 경로 복사. 전환은 클립보드·전송·업무 상태를 변경하지 않고 완료 시 현재 설정을 적용. 원본 유지 모드는 완료 시 byte·type·changeCount를 변경하지 않음.
+- S16: 최근 완료 이미지의 `원본 복사`는 두 모드에서 원격 원본을 요청 시에만 가져와 동일 형식/byte로 클립보드에 기록. 새 내용·OFF·잠금·generation 변경 시 덮어쓰기 금지. 앱이 기록한 원본은 재업로드하지 않음. 만료/연결 오류 표시, 임시 다운로드 제거, 장기 로컬 복사본 없음. 명시적 경로 복사도 유지.
+
+S15/S16 구현: `ClipboardPreferences.complete`, `AppDelegate.complete/copy/restore`, `DashboardController.render`, `Engine.RestoreOriginal`, `SSH.Download`, `remote.Serve(download)`. 다운로드는 기존 SSH master를 사용하는 요청별 임시 채널로 제어/업로드 RPC를 점유하지 않습니다. 원본 복사 후 lastCount 갱신으로 재전송을 막고 복사 뒤 scratch를 삭제합니다. 검증 결과는 validation.md에 기록합니다.

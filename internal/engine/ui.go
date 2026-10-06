@@ -43,6 +43,10 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 		return errors.New("같은 저장 공간을 사용하는 Worklink가 이미 실행 중입니다")
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	// Download scratch files are short lived; reclaim those left by an app crash.
+	if err = os.RemoveAll(filepath.Join(root, "restores")); err != nil {
+		return err
+	}
 	var writeMu sync.Mutex
 	emit := func(event Event) { writeMu.Lock(); defer writeMu.Unlock(); json.NewEncoder(w).Encode(event) }
 	e, err := New(root, nil, emit)
@@ -75,6 +79,8 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			problem = e.Retry(c.JobID)
 		case "copy_path":
 			event.Result, problem = e.CopyPath(c.JobID)
+		case "restore_original":
+			event.Result, problem = e.RestoreOriginal(c.JobID)
 		case "title":
 			problem = e.RefreshTitle(c.PortID)
 		case "clear_pending":
@@ -103,7 +109,7 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			emit(Event{Kind: "reply", Error: err.Error()})
 			continue
 		}
-		if c.Method == "copy_path" || c.Method == "title" || c.Method == "install_remote" {
+		if c.Method == "restore_original" || c.Method == "copy_path" || c.Method == "title" || c.Method == "install_remote" {
 			go handle(c)
 		} else {
 			handle(c)

@@ -122,6 +122,52 @@ func Connect(ctx context.Context, h model.Host) (Connection, error) {
 	}
 	return s, nil
 }
+func (s *SSH) Download(ctx context.Context, q remote.Request, dest io.Writer) (res remote.Response, err error) {
+	// An on-demand helper channel shares our master without holding the control RPC queue.
+	// ProxyCommand=false prevents a lost master from falling back to a new connection.
+	args := append(options(), "-S", s.socket, "-o", "ControlMaster=no", "-o", "ProxyCommand=/usr/bin/false", "-o", "ClearAllForwardings=yes", "-T", s.host.Name, "exec "+s.host.Helper+" remote --stdio")
+	cmd := exec.CommandContext(ctx, "/usr/bin/ssh", args...)
+	var log limitedLog
+	cmd.Stderr = &log
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return res, err
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		in.Close()
+		return res, err
+	}
+	if err = cmd.Start(); err != nil {
+		in.Close()
+		out.Close()
+		return res, err
+	}
+	defer func() { in.Close(); out.Close(); cmd.Process.Kill(); cmd.Wait() }()
+	q.Version = wire.Version
+	q.Op = "download"
+	if err = wire.Write(in, q); err == nil {
+		err = wire.Read(out, &res)
+	}
+	if err != nil {
+		return res, err
+	}
+	if res.Version != wire.Version {
+		return res, errors.New("원격 프로토콜 버전이 다릅니다")
+	}
+	if res.Error != "" {
+		return res, errors.New(res.Error + " (헬퍼가 오래됐다면 설정에서 다시 설치해 주세요)")
+	}
+	if res.Image == nil || res.Image.ID != q.ID || res.Image.Size != q.Size || res.Image.SHA256 != q.SHA256 || res.Image.Extension != q.Extension {
+		return res, errors.New("원격 원본 정보가 일치하지 않습니다")
+	}
+	_, err = io.CopyN(dest, out, q.Size)
+	if ctx.Err() != nil {
+		return res, ctx.Err()
+	}
+	return res, err
+}
+
 func (s *SSH) Call(ctx context.Context, q remote.Request, payload io.Reader) (remote.Response, error) {
 	select {
 	case s.rpc <- struct{}{}:

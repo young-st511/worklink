@@ -17,7 +17,8 @@ host = os.environ.get("WORKLINK_TEST_SSH_HOST")
 if not host:
     raise SystemExit("Set WORKLINK_TEST_SSH_HOST to an existing SSH alias.")
 ssh = ["/usr/bin/ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host]
-binary = Path(".build/worklink").resolve()
+bundled_core = Path(".build/Worklink.app/Contents/Resources/worklink")
+binary = (bundled_core if bundled_core.exists() else Path(".build/worklink")).resolve()
 
 def command(text):
     return subprocess.run(ssh + [text], capture_output=True, text=True, check=True, timeout=20).stdout.strip()
@@ -108,20 +109,29 @@ sys.stdin.read();s.shutdown()
         send("copy_path", job_id=complete["id"])
         copy = wait(lambda e: e.get("id")=="copy_path")
         assert copy["result"]==path and not copy.get("error")
+        send("restore_original", job_id=complete["id"])
+        restored = wait(lambda e: e.get("id")=="restore_original")
+        assert not restored.get("error"), restored
+        scratch = Path(restored["result"]["path"])
+        assert scratch.read_bytes() == payload
+        scratch.unlink()
         send("toggle", on=False)
         wait(lambda e: e.get("state") and not e["state"]["on"])
         app.stdin.close();app.wait(timeout=10)
         assert app.returncode==0, app.stderr.read()
         if os.environ.get("WORKLINK_QA_NATIVE") == "1":
             source_png = Path('.build/previews/on-light.png').resolve()
-            native_env = dict(env, WORKLINK_QA_IMAGE_PATH=str(source_png))
-            native = subprocess.run(['.build/Worklink.app/Contents/MacOS/Worklink','--qa-transfer'],capture_output=True,text=True,env=native_env,timeout=30)
-            assert native.stdout.strip(), dict(native_exit=native.returncode,native_error=native.stderr[-4000:])
-            result = json.loads(native.stdout.strip().splitlines()[-1])
-            assert result['path_replaced'], result
-            assert result['sha256'] == hashlib.sha256(source_png.read_bytes()).hexdigest(), result
-            print(json.dumps(dict(native_app_pipeline=True,original_png_sha256=True,named_clipboard_path_replaced=True)))
-        print(json.dumps(dict(real_ssh=True, tunnel_http=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, off_shutdown=True)))
+            for preserve in (False, True):
+                native_env = dict(env, WORKLINK_QA_IMAGE_PATH=str(source_png), WORKLINK_QA_PRESERVE="1" if preserve else "0")
+                native = subprocess.run(['.build/Worklink.app/Contents/MacOS/Worklink','--qa-transfer'],capture_output=True,text=True,env=native_env,timeout=30)
+                assert native.stdout.strip(), dict(native_exit=native.returncode,native_error=native.stderr[-4000:])
+                result = json.loads(native.stdout.strip().splitlines()[-1])
+                assert result['path_replaced'] == (not preserve), result
+                assert result['original_preserved'] == preserve, result
+                assert result['manual_path_copied'] and result['original_restored'] and result['restore_no_reupload'] and result['scratch_removed'], result
+                assert result['sha256'] == hashlib.sha256(source_png.read_bytes()).hexdigest(), result
+                print(json.dumps(dict(native_app_pipeline=True, preserve_mode=preserve, original_png_sha256=True, manual_path_copy=True, original_restored=True, restore_no_reupload=True, scratch_removed=True)))
+        print(json.dumps(dict(real_ssh=True, tunnel_http=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, remote_original_download=True, off_shutdown=True)))
 finally:
     if app and app.poll() is None:
         app.terminate();app.wait(timeout=10)

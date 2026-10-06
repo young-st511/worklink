@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -92,5 +95,72 @@ func TestOffAndRestartDoNotSend(t *testing.T) {
 	}
 	if calls != 0 {
 		t.Fatal("OFF connected")
+	}
+}
+
+func (l *localConnection) Download(ctx context.Context, q remote.Request, dest io.Writer) (remote.Response, error) {
+	i, err := l.s.Verify(q.ID)
+	if err != nil {
+		return remote.Response{}, err
+	}
+	src, err := os.Open(i.Path)
+	if err != nil {
+		return remote.Response{}, err
+	}
+	defer src.Close()
+	_, err = io.Copy(dest, src)
+	return remote.Response{Image: &i}, err
+}
+func TestRestoreOriginalAndExpiry(t *testing.T) {
+	inbox, _ := storage.Open(t.TempDir(), model.DefaultConfig().Limits)
+	data := []byte{0, 255, 1, 4}
+	id := model.NewID()
+	image, err := inbox.Receive(id, "png", fmt.Sprintf("%x", sha256.Sum256(data)), int64(len(data)), bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, _ := New(t.TempDir(), nil, func(Event) {})
+	e.state.On = true
+	e.state.Generation = 3
+	e.state.Config.Hosts = []model.Host{{Name: "test", Helper: "/tmp/helper"}}
+	e.state.Jobs = []Job{{Image: image, RemotePath: image.Path}}
+	e.state.Jobs[0].Host = "test"
+	peer := &peer{connection: &localConnection{inbox}}
+	e.peers["test"] = peer
+	restored, err := e.RestoreOriginal(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(restored.Path)
+	if err != nil || !bytes.Equal(got, data) {
+		t.Fatal(got, err)
+	}
+	os.Remove(restored.Path)
+	os.Remove(image.Path)
+	if _, err = e.RestoreOriginal(id); err == nil {
+		t.Fatal("expired image restored")
+	}
+	files, _ := os.ReadDir(filepath.Join(e.store.Root, "restores"))
+	if len(files) != 0 {
+		t.Fatal("failed download leaked temp files")
+	}
+	e.state.On = false
+	if _, err = e.RestoreOriginal(id); err == nil {
+		t.Fatal("OFF download accepted")
+	}
+}
+
+func TestQueuedCaptureWaitsForFailedConnection(t *testing.T) {
+	e, err := New(t.TempDir(), nil, func(Event) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.state.On = true
+	e.state.Generation = 1
+	e.state.Jobs = []Job{{Image: model.Image{ID: model.NewID(), Host: "test", Status: "queued", Generation: 1, CreatedAt: time.Now(), Extension: "png"}}}
+	e.peers["test"] = &peer{}
+	e.sendNext(context.Background(), 1)
+	if e.Snapshot().Jobs[0].Status != "queued" {
+		t.Fatal("disconnected capture no longer queued")
 	}
 }

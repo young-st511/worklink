@@ -42,3 +42,15 @@ Go 1.26.4, Swift 6.4, macOS arm64. 네이티브 화면 제어 도구 첫 호출�
 ## 팝업 크기 회귀 수정
 
 2026-10-06 사용자 화면에서 ON/OFF와 전송 기록 갱신 시 높이 불일치 및 재열기 상단 잘림을 확인했습니다. 고정 380×460 point와 header/footer 고정, 목록 전용 스크롤, showMenu top reset 및 contentSize 동기화를 구현했습니다. 회귀 테스트를 먼저 추가해 구현 전 빌드 실패를 확인하고, 구현 후 native self-test와 밝은/어두운/OFF/오류 렌더 확인을 통과했습니다. 코드 리뷰어의 실제 AppKit harness는 긴 서버 목록 100회 render에서 크기·스크롤 위치 보존, 제약 누적 없음, 고정 영역 겹침 없음을 확인했습니다. 두 리뷰 추가 blocker 없음. 기존 클립보드 정책은 옵션 선택 전이므로 변경하지 않았습니다. 실제 메뉴 클릭/재열기는 CUA 접근 거부로 자동 검증하지 못했습니다.
+
+## 클립보드 완료 모드와 원본 복사
+
+2026-10-06 사용자 결정에 따라 메뉴 상단 `캡처 원본 유지` 전환(로컬 preferences 저장, 초기 기본은 기존 자동 경로 복사)과 최근 완료 이미지 `원본 복사`를 추가했습니다. 자동 전송은 유지하며 진행 중 작업은 완료 때 현재 모드를 적용합니다. 수동 경로 복사와 원본 복사는 요청 시 changeCount·업무 generation·ON/잠금 상태를 확인합니다. 원본 다운로드는 요청별 임시 SSH helper 채널에서 수행하며 기존 master를 공유합니다.
+
+- 구현 전 원본 보존/모드 저장/native 원본 복사 테스트의 미구현 빌드 실패, 원격 download 테스트의 미지원 응답, Engine.RestoreOriginal 테스트의 미구현 실패를 확인한 후 구현했습니다.
+- Go race/test/vet, native self-test, 실제 SSH와 named pasteboard 통합 QA 통과. 자동 경로 모드와 원본 유지 모드 각각에서 원본 SHA-256, 완료 시 clipboard 정책, 명시적 경로 복사, 원본 복사, 감지 타이머 2회 이후 재업로드 없음, 다운로드 scratch 삭제를 확인했습니다. 기존 IPv4/IPv6 터널·HTML 제목·ACK 후 큐 삭제·OFF 종료도 통과했습니다.
+- PNG/JPEG(jpg·jpeg)/TIFF/HEIC/HEIF/WebP의 원본 복사는 해당 pasteboard type의 같은 byte를 기록하는 native 테스트로 확인했습니다. 실제 SSH+native end-to-end는 PNG로 검증했으며 타 앱의 각 형식 해석을 보장하지 않습니다. 테스트의 임의 JPEG/HEIC byte를 generic reader로 읽던 과정은 OS format promise 변환 때문에 unreadable이었으므로 해당 원본 type의 byte를 직접 확인하도록 수정했습니다.
+- 두 병렬 리뷰에서 발견한 기존 전송 큐의 nil 연결 검사 회귀와 jpeg 확장자 별칭 누락을 수정하고 회귀 테스트를 추가했습니다. 최종 두 리뷰 추가 blocker 없음. 코드 리뷰어의 별도 임시 overlay 테스트는 다운로드 중 OFF, 동시 원본 복사 거부, 해시 불일치 거부 및 실패 scratch 삭제를 확인했으며 Go race 5회 반복도 통과했습니다.
+- 실제 AppKit 밝은/어두운 원본 유지/자동 경로/최근 5개 목록 뷰를 렌더·시각 확인했습니다. 고정 380×460 point와 pinned header/footer·재열기 reset 회귀 테스트도 통과했습니다. 길어진 목록만 스크롤합니다.
+- 로컬 설치 번들은 atomic 교체 후 codesign 검증과 빌드 바이너리 hash 일치 확인을 완료했습니다. 등록된 원격 헬퍼도 갱신했습니다. 운영 preferences·SSH 설정·이미지·포트 등록 정보는 repo에 저장하지 않았습니다.
+- 실제 메뉴 클릭/재열기는 CUA의 Worklink 접근 거부 때문에 자동 조작으로 검증하지 못했고 이를 다른 UI 자동화로 우회하지 않았습니다. 실행 중 제품 앱도 자동 재시작하지 않았으므로 메뉴에서 종료 후 재실행해야 새 UI가 적용됩니다. GitHub 생성/push/배포 없음.

@@ -163,3 +163,11 @@ Worklink · 업무 ON · office-mac 연결됨
 클립보드 권한이나 기존 클립보드 도구와 충돌하면 전용 폴더의 새 이미지 파일을 관찰합니다. FSEvents는 파일 시스템 변경을 묶어서 통지하므로 전체 폴더를 매초 열거하는 것보다 적합합니다. 시작 시 watcher를 먼저 설치하고 스냅샷을 읽으며, 이벤트 누락·합쳐짐을 감안해 해당 폴더를 재검사합니다. 초기 파일은 자동 전송하지 않고 새로 생성된 파일만 처리합니다. [Apple FSEvents](https://developer.apple.com/documentation/coreservices/file_system_events)
 
 전체 Desktop이나 사용자 홈을 감시하지 않습니다. 앱이 OS의 기본 스크린샷 저장 위치를 자동으로 바꾸지도 않습니다. 파일 작성 완료와 symlink·크기 제한을 확인하고 중복 전송을 막습니다.
+
+## 클립보드 완료 모드와 최근 원본 복사
+
+완료 시 자동 경로 복사(기존 기본)와 `캡처 원본 유지`를 메뉴 상단에서 전환합니다. 로컬 사용자 preferences에 저장하며 개발 preferences는 분리합니다. 전송이 끝날 때 현재 모드를 적용하며 원본 유지에서는 클립보드를 쓰지 않습니다. 수동 경로 복사는 두 모드에서 가능합니다.
+
+`원본 복사`는 요청할 때 원격 관리 이미지의 원본을 별도 임시 helper 채널로 스트리밍합니다. 이 채널은 기존 Worklink master를 공유하고 제어 RPC를 점유하지 않습니다. master가 없으면 ProxyCommand=/usr/bin/false로 신규 연결을 막습니다. 메타데이터·크기·SHA-256 확인 뒤 로컬 임시 파일을 Swift가 같은 pasteboard 형식으로 읽어 기록하고 삭제합니다. 새 clipboard/changeCount, OFF/잠금/generation 변경 시 기록하지 않으며 복사 후 감지 카운터를 갱신해 재업로드하지 않습니다. 실패 scratch는 Go가 즉시 제거하고 비정상 종료 잔여 파일은 다음 UI 시작에 정리합니다. 상시 원본 캐시는 없습니다.
+
+SSH master 공유와 옵션 판단은 [OpenSSH ssh 매뉴얼](https://man.openbsd.org/ssh), [ControlMaster/ProxyCommand 공식 설정 문서](https://man.openbsd.org/ssh_config)에 근거했습니다.

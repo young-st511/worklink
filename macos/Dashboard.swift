@@ -15,6 +15,10 @@ final class DashboardController: NSViewController {
   var toggle: (() -> Void)?
   var settings: (() -> Void)?
   var quit: (() -> Void)?
+  var restore: ((ImageJob) -> Void)?
+  var restoring: String?
+  var preservesImage = false
+  var changeClipboardMode: ((Bool) -> Void)?
   var copy: ((ImageJob) -> Void)?
   var retry: ((ImageJob) -> Void)?
   var titleRefresh: ((PortConfig) -> Void)?
@@ -41,13 +45,24 @@ final class DashboardController: NSViewController {
     view.subviews.forEach { $0.removeFromSuperview() }
     let title = label("Worklink", size: 16, bold: true)
     let status = label(state.on ? "업무 ON" : "업무 OFF", size: 11, color: .secondaryLabelColor)
+    let keep = ActionButton("캡처 원본 유지") { [weak self] in
+      guard let self else { return }
+      self.changeClipboardMode?(!self.preservesImage)
+    }
+    keep.setButtonType(.switch)
+    keep.state = preservesImage ? .on : .off
+    keep.font = .systemFont(ofSize: 11)
     let header = vertical(
       [
         horizontal([title, status]),
         label(
           state.on ? "이미지 전달과 등록한 서버 연결이 켜져 있습니다." : "우클릭으로 시작 · 좌클릭으로 목록 확인", size: 11,
           color: .secondaryLabelColor),
-      ], spacing: 10)
+        keep,
+        label(
+          preservesImage ? "자동 전송 후에도 로컬 이미지를 유지합니다." : "전송 완료 시 원격 경로를 자동 복사합니다.", size: 10,
+          color: .secondaryLabelColor),
+      ], spacing: 6)
     var sections: [NSView] = []
     if !notice.isEmpty {
       sections.append(
@@ -156,8 +171,16 @@ final class DashboardController: NSViewController {
         if job.status == "complete" { self?.copy?(job) } else { self?.retry?(job) }
       }
       action.isEnabled = state.on && !expired.contains(job.id) && job.status != "sending"
+      var actions: [NSView] = [action]
+      if job.status == "complete" {
+        let original = ActionButton(restoring == job.id ? "가져오는 중…" : "원본 복사") { [weak self] in
+          self?.restore?(job)
+        }
+        original.isEnabled = state.on && !expired.contains(job.id) && restoring == nil
+        actions.append(original)
+      }
       var row: [NSView] = [
-        info, horizontal([label(stateText, size: 11, color: .secondaryLabelColor), action]),
+        info, label(stateText, size: 11, color: .secondaryLabelColor), horizontal(actions),
       ]
       if let error = job.error, !error.isEmpty {
         row.append(label(error, size: 10, color: .systemRed))

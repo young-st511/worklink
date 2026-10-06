@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   var afterLaunch: (() -> Void)?
   var lastGeneration: UInt64 = 0
   var clipboardBlocked = false
+  lazy var clipboardPreferences = ClipboardPreferences(
+    defaults: dev ? UserDefaults(suiteName: "dev.worklink.development")! : .standard)
   var clipboardBoard: NSPasteboard = .general
   let dev =
     (CommandLine.arguments.contains("--dev") || CommandLine.arguments.contains("--qa-transfer")
@@ -45,6 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     dashboard.settings = { [weak self] in self?.showSettings() }
     dashboard.quit = { NSApp.terminate(nil) }
     dashboard.open = { [weak self] port in self?.open(port) }
+    dashboard.preservesImage = clipboardPreferences.preservesImage
+    dashboard.changeClipboardMode = { [weak self] on in
+      guard let self else { return }
+      clipboardPreferences.preservesImage = on
+      dashboard.preservesImage = on
+      notice(on ? "원본 유지 · 필요할 때 경로 복사를 눌러 주세요." : "자동 경로 복사 · 전송 완료 시 경로를 복사합니다.")
+    }
+    dashboard.restore = { [weak self] job in self?.restore(job) }
     dashboard.copy = { [weak self] job in self?.copy(job) }
     dashboard.retry = { [weak self] job in
       self?.bridge.send("retry", ["job_id": job.id], reply: { [weak self] r in self?.result(r) })
@@ -216,18 +226,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let allowed =
       desiredOn && !suspended && state.on && state.generation == job.generation
       && state.config.imageHost == job.host
-    if ClipboardReader.replaceWithPath(
+    switch clipboardPreferences.complete(
       path, board: clipboardBoard, expectedCount: count, allowed: allowed)
     {
+    case .pathCopied:
       lastCount = clipboardBoard.changeCount
       dashboard.copied = [job.id]
       dashboard.copiedCount = clipboardBoard.changeCount
       notice("붙여넣기 준비됨 · 원격 경로를 복사했습니다.")
-    } else {
-      notice("전송 완료 · 클립보드가 바뀌어 경로 복사를 생략했습니다.")
+    case .originalKept:
+      notice("전송 완료 · 캡처 원본 유지 중. 필요할 때 경로를 복사하세요.")
+    case .clipboardUnchanged:
+      notice("전송 완료 · 클립보드나 업무 상태가 바뀌어 경로 복사를 생략했습니다.")
     }
   }
+  func restore(_ job: ImageJob) {
+    guard dashboard.restoring == nil, desiredOn, !suspended, let state = bridge.state, state.on
+    else { return }
+    let count = clipboardBoard.changeCount
+    let generation = state.generation
+    dashboard.restoring = job.id
+    notice("원본 이미지 가져오는 중…")
+    bridge.send(
+      "restore_original", ["job_id": job.id],
+      reply: { [weak self] response in
+        let result = response["result"] as? [String: Any]
+        let path = (result?["path"] as? String).map { URL(fileURLWithPath: $0) }
+        defer { if let path { try? FileManager.default.removeItem(at: path) } }
+        guard let self else { return }
+        dashboard.restoring = nil
+        if let error = response["error"] as? String {
+          if error.contains("만료") { dashboard.expired.insert(job.id) }
+          notice("오류 · \(error)")
+          return
+        }
+        guard let path, let ext = result?["extension"] as? String else {
+          notice("오류 · 원본 응답을 읽지 못했습니다.")
+          return
+        }
+        do {
+          let bytes = try Data(contentsOf: path, options: .mappedIfSafe)
+          let allowed =
+            desiredOn && !suspended && bridge.state?.on == true
+            && bridge.state?.generation == generation
+          guard
+            ClipboardReader.restore(
+              bytes, extension: ext, board: clipboardBoard, expectedCount: count, allowed: allowed)
+          else {
+            notice("원본 복사 생략 · 클립보드나 업무 상태가 바뀌었습니다.")
+            return
+          }
+          lastCount = clipboardBoard.changeCount
+          dashboard.copied.removeAll()
+          dashboard.copiedCount = nil
+          notice("원본 이미지를 복사했습니다. 로컬 앱에 붙여넣을 수 있습니다.")
+        } catch { notice("오류 · 원본 복사 실패: \(error.localizedDescription)") }
+      })
+  }
   func copy(_ job: ImageJob) {
+    let count = clipboardBoard.changeCount
+    let generation = bridge.state?.generation
     bridge.send(
       "copy_path", ["job_id": job.id],
       reply: { [weak self] r in
@@ -238,8 +296,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           return
         }
         guard let path = r["result"] as? String else { return }
-        clipboardBoard.clearContents()
-        clipboardBoard.setString(path, forType: .string)
+        let allowed =
+          desiredOn && !suspended && bridge.state?.on == true
+          && bridge.state?.generation == generation
+        guard
+          ClipboardReader.replaceWithPath(
+            path, board: clipboardBoard, expectedCount: count, allowed: allowed)
+        else {
+          notice("경로 복사 생략 · 클립보드나 업무 상태가 바뀌었습니다.")
+          return
+        }
         lastCount = clipboardBoard.changeCount
         dashboard.copied = [job.id]
         dashboard.copiedCount = clipboardBoard.changeCount
