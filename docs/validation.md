@@ -170,3 +170,10 @@ check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 
 코드 리뷰에서 전역 hover 소유권이 서로 다른 창의 재그림을 연쇄시킬 수 있음을 발견해 root별 weak-to-weak map으로 범위를 제한했습니다. 독립 root의 상태 보존과 같은 root의 이전 해제, 부모 제거 후 해제 회귀 테스트를 추가했습니다. offscreen 부모 제거에는 window callback이 없어 테스트가 실패했으며 superview 이동 콜백에도 해제를 추가한 뒤 전체 native 검증이 통과했습니다.
 
 두 병렬 리뷰 재검증 추가 blocker 없음. 코드 리뷰어의 최신 소스 독립 빌드/native 검증과 dark 렌더도 통과했습니다. `/Applications` 설치본을 atomic 교체하고 서명·빌드 hash·공개 소스 검수를 통과했습니다. 사용자 설정/원본/원격 helper 변경이나 제품 자동 재시작/GitHub 작업은 하지 않았습니다.
+
+
+## 서버 표시 순서
+
+2026-10-08 사용자 확인으로 실제 앱의 이전 호버 잔상이 해결되었음을 기록합니다. 메뉴 서버 행을 로컬 포트 번호 오름차순으로 정렬하며 같은 포트의 기존 순서는 보존합니다. 표시 시에만 정렬하고 config·SSH·연결/이미지 동작은 변경하지 않습니다. 기존 전체 native self-test로 회귀를 확인합니다.
+
+Native self-test와 diff 검사를 통과했습니다. `/Applications/Worklink.app` 설치본을 atomic 갱신하고 서명·빌드 hash를 확인했습니다. 앱은 자동 재시작하지 않았으며 로컬 Git만 사용했습니다.

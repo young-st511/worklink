@@ -85,3 +85,5 @@ S27 구현: `ActionButton.updateTrackingAreas/mouseEntered/mouseExited/resetCurs
 - S28: 상세 개폐·재렌더 후 호버는 같은 root의 실제 hit 대상 하나에만 적용하고 서로 다른 창의 재그림은 간섭하지 않습니다. 겹친 임시 frame/오래된 enter 상태가 여러 버튼을 강조하지 않도록 하고, 비활성·뷰 제거 시 해제합니다. 펼친 상세의 URL·주소 복사 아이콘·제목 확인을 동일 24 point 행에 배치하고 긴 URL은 tooltip/접근성으로 보존합니다.
 
 S28 구현: `ActionButton.setHovered/synchronizeHover/viewWillMove/draw`, `DashboardController.compactPortRow`. root별 단일 weak hover 소유권과 content hitTest를 사용하며 상세 URL/action은 동일 24 point 행입니다. `nativeSelfTest`는 hover 소유권 이전과 상세 행 크기/복사 icon을 확인합니다.
+
+- S29 구현: `DashboardController.render`는 표시된 로컬 포트 번호 오름차순으로 서버 행을 정렬하고 같은 포트는 기존 등록 순서를 유지합니다. 설정 저장 순서와 연결 대상은 변경하지 않습니다.

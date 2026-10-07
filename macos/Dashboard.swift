@@ -247,8 +247,12 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
     }
     if !state.config.ports.isEmpty {
+      let sortedPorts = state.config.ports.enumerated().sorted {
+        if $0.element.localPort == $1.element.localPort { return $0.offset < $1.offset }
+        return $0.element.localPort < $1.element.localPort
+      }.map { $0.element }
       sections.append(
-        vertical(state.config.ports.map { compactPortRow($0, state: state) }, spacing: 3))
+        vertical(sortedPorts.map { compactPortRow($0, state: state) }, spacing: 3))
     }
     sections.append(separator())
     sections.append(
