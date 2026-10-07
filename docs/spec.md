@@ -77,3 +77,7 @@ S25 구현: `Endpoint.Candidates/AllowsTarget`, `remote.Serve(check)`, `Engine.c
 - S26: 최근 이미지 행은 한 줄 28 point로 시간·실제 작업 대상·용량·짧은 상태·작은 경로/원본 복사 버튼을 표시합니다. 전체 metadata(형식 포함)·오류·비활성 이유는 tooltip/accessibility로 유지합니다. 최근 5개, original copy/copy_path/retry callback·clipboard 준비됨 추적은 유지합니다. 일반 5개 이미지가 body viewport에 들어갑니다.
 
 S26 구현: `DashboardController.render`의 28 point image row, metadata/state tooltip/AX와 compactAction icon-only control. 기존 copy/restore/retry와 copiedCount guard를 유지합니다. native self-test는 5개 viewport/행 높이·두 복사 callback·help를 확인합니다.
+
+- S27: 활성 버튼의 hover 강조와 pointing cursor를 제공합니다. 포트 행에서 화살표 외 모든 영역은 같은 서버 열기 버튼으로 처리하며 연결 가능일 때만 활성화합니다. 상세 화살표는 별도의 버튼으로 유지합니다. 대기/OFF/충돌은 열기 비활성+이유 tooltip, 상세는 열 수 있습니다. 내부 표시 label은 click을 가로채지 않고 disabled hover/실행을 차단합니다. Dark mode·고정 행/팝업·quick editor/IME는 유지하며 polling을 추가하지 않습니다.
+
+S27 구현: `ActionButton.updateTrackingAreas/mouseEntered/mouseExited/resetCursorRects/draw`, `PortDisplayStack.hitTest`, `DashboardController.compactPortRow`. 이벤트 기반 hover이며 추가 polling은 없습니다. `nativeSelfTest`는 행 여러 위치의 동일 hit target, 상세 분리, 실제 hover pixel 변화와 disabled hover/콜백 차단, OFF/대기/충돌 이유·상세 활성 유지를 확인합니다.

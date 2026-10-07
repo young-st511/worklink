@@ -114,6 +114,24 @@ func renderPreviews(_ directory: URL) throws {
         to: directory.appendingPathComponent(
           "ports-\(count)-\(style == .aqua ? "light" : "dark").png"))
       if count == 1 {
+        func buttons(_ root: NSView) -> [ActionButton] {
+          (root as? ActionButton).map { [$0] } ?? root.subviews.flatMap { buttons($0) }
+        }
+        if let button = buttons(portsPanel.view).first(where: {
+          $0.identifier?.rawValue.hasPrefix("port-open-") == true
+        }),
+          let event = NSEvent.otherEvent(
+            with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, subtype: 0, data1: 0, data2: 0)
+        {
+          button.mouseEntered(with: event)
+          try renderNative(
+            portsPanel.view,
+            to: directory.appendingPathComponent(
+              "ports-hover-\(style == .aqua ? "light" : "dark").png"))
+          button.mouseExited(with: event)
+        }
+
         portsPanel.expanded.insert(state.config.ports[0].id)
         portsPanel.render(state)
         try renderNative(
@@ -566,12 +584,45 @@ func nativeSelfTest() throws {
   else { throw NSError(domain: "Worklink QA", code: 1) }
   guard
     let addressButton = actionButtons(firstRow).first(where: {
-      $0.title.hasPrefix("localhost:")
+      $0.identifier?.rawValue.hasPrefix("port-open-") == true
     })
   else { throw NSError(domain: "Worklink QA", code: 1) }
   try require(
     addressButton.toolTip == "https://localhost:5200/preview?q=1#view",
     "compact address lost full URL tooltip")
+  for x: CGFloat in [3, 35, 160, 260, 310] {
+    let hit = firstRow.hitTest(NSPoint(x: firstRow.frame.minX + x, y: firstRow.frame.midY))
+    try require(hit === addressButton, "port row locations route to different actions")
+  }
+  guard
+    let hoverEvent = NSEvent.otherEvent(
+      with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+      context: nil, subtype: 0, data1: 0, data2: 0)
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  func buttonPixel(_ button: ActionButton) throws -> NSColor {
+    guard let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds) else {
+      throw NSError(domain: "Worklink QA", code: 1)
+    }
+    button.displayIfNeeded()
+    button.cacheDisplay(in: button.bounds, to: rep)
+    guard let pixel = rep.colorAt(x: rep.pixelsWide / 2, y: 2)?.usingColorSpace(.sRGB) else {
+      throw NSError(domain: "Worklink QA", code: 1)
+    }
+    return pixel
+  }
+  let hoverBefore = try buttonPixel(addressButton)
+  addressButton.mouseEntered(with: hoverEvent)
+  try require(addressButton.isHovered, "active button did not respond to hover")
+  let hoverAfter = try buttonPixel(addressButton)
+  try require(
+    abs(hoverBefore.alphaComponent - hoverAfter.alphaComponent) > 0.05
+      || abs(hoverBefore.blueComponent - hoverAfter.blueComponent) > 0.02,
+    "hover has no visible feedback")
+  addressButton.mouseExited(with: hoverEvent)
+  try require(!addressButton.isHovered, "hover did not clear")
+  disabledAction.setDisabledReason("비활성")
+  disabledAction.mouseEntered(with: hoverEvent)
+  try require(!disabledAction.isHovered, "disabled button highlighted on hover")
   addressButton.performClick(nil)
   try require(
     opened?.endpoint.localURL(5200)?.absoluteString == "https://localhost:5200/preview?q=1#view"
@@ -580,11 +631,43 @@ func nativeSelfTest() throws {
   guard let disclosure = actionButtons(firstRow).first(where: { $0.title == "상세 보기" }) else {
     throw NSError(domain: "Worklink QA", code: 1)
   }
+  try require(
+    firstRow.hitTest(NSPoint(x: firstRow.frame.maxX - 8, y: firstRow.frame.midY)) === disclosure,
+    "disclosure hit area overlaps server open")
+  opened = nil
   disclosure.performClick(nil)
   try require(
     actionButtons(compactPanel.view).contains { $0.title == "주소 복사" }
       && actionButtons(compactPanel.view).contains { $0.title == "제목 확인" },
     "compact disclosure removed details actions")
+  try require(opened == nil, "disclosure opened browser")
+  for (on, status, reason) in [
+    (false, "ready", "업무 OFF"), (true, "waiting", "서버 연결 대기"), (true, "conflict", "로컬 포트 충돌"),
+  ] {
+    var unavailable = compactState
+    unavailable.on = on
+    unavailable.ports[0] = PortStatus(
+      id: unavailable.config.ports[0].id, status: status, error: nil, reachable: false)
+    compactPanel.render(unavailable)
+    guard
+      let unavailableOpen = actionButtons(compactPanel.view).first(where: {
+        $0.identifier?.rawValue == "port-open-\(unavailable.config.ports[0].id)"
+      })
+    else { throw NSError(domain: "Worklink QA", code: 1) }
+    try require(
+      !unavailableOpen.isEnabled && unavailableOpen.toolTip == reason,
+      "unavailable port lacks disabled reason")
+    unavailableOpen.mouseEntered(with: hoverEvent)
+    unavailableOpen.performClick(nil)
+    try require(
+      !unavailableOpen.isHovered && opened == nil, "unavailable port hovered or opened browser")
+    let unavailableRow = taggedViews(compactPanel.view, prefix: "port-row-").first {
+      $0.identifier?.rawValue == "port-row-\(unavailable.config.ports[0].id)"
+    }!
+    try require(
+      actionButtons(unavailableRow).contains { $0.title.hasPrefix("상세") && $0.isEnabled },
+      "unavailable port lost details")
+  }
   let imagePanel = DashboardController()
   var imageState = fixtureState()
   imageState.config.ports = []

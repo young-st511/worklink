@@ -144,3 +144,15 @@ check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 
 두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어가 최신 Swift 소스를 별도 임시 앱으로 빌드해 native 검증을 통과했고 engine/remote race5회·vet·아이콘 검사도 통과했습니다.
 
 /Applications 설치본을 atomic 교체하고 코드 서명·빌드 hash 및 공개 소스 검수를 확인했습니다. 사용자 설정·이미지 데이터·원격 helper는 이번 UI step에서 변경하지 않았고 앱 자동 재시작/GitHub 작업은 하지 않았습니다.
+
+
+## 버튼 호버와 일관된 포트 클릭 영역
+
+2026-10-07 활성 ActionButton에 마우스 enter/exit 기반의 accent 배경 강조와 pointing-hand cursor를 추가했습니다. 추가 폴링은 없습니다. 포트 행 왼쪽 320 point는 표시 이름·주소·상태를 담는 하나의 열기 버튼이고 오른쪽 24 point는 독립 상세 버튼입니다. 표시용 stack은 hitTest를 가로채지 않습니다. 연결 가능만 열기 활성화하며 업무 OFF·대기·충돌은 비활성 이유를 tooltip/accessibility로 유지합니다.
+
+- spec-first 테스트에서 새 hover 속성 미구현 compile 실패를 확인한 뒤 구현했습니다. 여러 행 위치가 같은 open button을 반환하는 native hitTest, 상세 버튼 hit area 분리·브라우저 호출 없음, 전체 HTTPS URL 콜백 보존, 호버 전후 실제 bitmap pixel 변화·exit 해제·disabled hover/실행 차단을 확인했습니다.
+- 업무 OFF·대기·충돌의 실제 port 버튼이 이유 tooltip을 가지고 열기를 차단하는 것과 상세 활성 유지 검사를 통과했습니다. 기존 고정 팝업·컴팩트 목록·입력 editor/IME·빠른 등록·clipboard/lifecycle/appearance native self-test도 통과했습니다.
+- light/dark AppKit hover PNG를 열어 왼쪽 행 전체의 배경 강조와 별도 화살표 영역, 텍스트 대비·잘림/겹침 없음을 확인했습니다. Go race/test/vet·아이콘 검사·diff 검사 통과.
+- 테스트는 별도 fixture의 직접 합성 handler 호출·hitTest·offscreen 렌더입니다. 실제 제품 mouse enter/exit·손 커서·툴팁·브라우저 클릭은 CUA 접근 거부로 미검증이며 다른 UI 자동화로 우회하지 않았습니다.
+
+두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어의 별도 임시 앱 빌드와 native self-test도 통과했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명과 Info/실행 파일/core/Assets.car/icns hash를 확인했습니다. 사용자 설정·이미지·원격 helper는 변경하지 않았으며 제품 앱 자동 재시작/GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.

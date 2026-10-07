@@ -13,6 +13,10 @@ final class AppearanceBackgroundView: NSView {
   }
 }
 
+final class PortDisplayStack: NSStackView {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 final class MenuWorkSwitch: NSSwitch {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -414,30 +418,42 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     dot.contentTintColor = ready ? .systemGreen : status == "충돌" ? .systemRed : .secondaryLabelColor
     dot.widthAnchor.constraint(equalToConstant: 6).isActive = true
     dot.heightAnchor.constraint(equalToConstant: 6).isActive = true
-    let name = ActionButton(port.displayName) { [weak self] in self?.open?(port) }
-    name.isBordered = false
-    name.alignment = .left
-    name.font = .systemFont(ofSize: 12, weight: .medium)
+    let name = label(
+      port.displayName, size: 12, color: ready ? .labelColor : .secondaryLabelColor, bold: true)
+    name.maximumNumberOfLines = 1
     name.lineBreakMode = .byTruncatingTail
-    name.toolTip = "\(port.displayName) · \(url)"
     name.widthAnchor.constraint(equalToConstant: 132).isActive = true
-    name.heightAnchor.constraint(equalToConstant: 24).isActive = true
-    let address = ActionButton("localhost:\(port.localPort)") { [weak self] in self?.open?(port) }
-    address.isBordered = false
-    address.alignment = .left
+    let address = label(
+      "localhost:\(port.localPort)", size: 10.5, color: ready ? .labelColor : .secondaryLabelColor)
     address.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+    address.maximumNumberOfLines = 1
     address.lineBreakMode = .byTruncatingMiddle
-    address.toolTip = url
-    address.setAccessibilityLabel(url)
     address.widthAnchor.constraint(equalToConstant: 120).isActive = true
-    address.heightAnchor.constraint(equalToConstant: 24).isActive = true
     let stateLabel = label(
       status, size: 10, color: status == "충돌" ? .systemRed : .secondaryLabelColor)
     stateLabel.maximumNumberOfLines = 1
     stateLabel.widthAnchor.constraint(equalToConstant: 36).isActive = true
-    stateLabel.heightAnchor.constraint(equalToConstant: 14).isActive = true
-    stateLabel.toolTip = state.on && port.enabled ? (connection?.error ?? statusHelp) : statusHelp
-    stateLabel.setAccessibilityHelp(stateLabel.toolTip)
+    let openButton = ActionButton("") { [weak self] in self?.open?(port) }
+    openButton.identifier = NSUserInterfaceItemIdentifier("port-open-\(port.id)")
+    openButton.isBordered = false
+    openButton.setDisabledReason(
+      ready ? nil : (state.on && port.enabled ? (connection?.error ?? statusHelp) : statusHelp))
+    if ready { openButton.toolTip = url }
+    openButton.setAccessibilityLabel("\(port.displayName) · \(url)")
+    if ready { openButton.setAccessibilityHelp("기본 브라우저에서 서버를 엽니다.") }
+    openButton.widthAnchor.constraint(equalToConstant: 320).isActive = true
+    openButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let display = PortDisplayStack(views: [dot, name, address, stateLabel])
+    display.orientation = .horizontal
+    display.alignment = .centerY
+    display.spacing = 4
+    display.translatesAutoresizingMaskIntoConstraints = false
+    openButton.addSubview(display)
+    NSLayoutConstraint.activate([
+      display.leadingAnchor.constraint(equalTo: openButton.leadingAnchor, constant: 4),
+      display.trailingAnchor.constraint(equalTo: openButton.trailingAnchor, constant: -4),
+      display.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
+    ])
     let isExpanded = expanded.contains(port.id)
     let details = ActionButton(isExpanded ? "상세 접기" : "상세 보기") { [weak self] in
       guard let self else { return }
@@ -452,10 +468,9 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     details.contentTintColor = .secondaryLabelColor
     details.toolTip = details.title
     details.setAccessibilityLabel(details.title)
-    details.widthAnchor.constraint(equalToConstant: 20).isActive = true
+    details.widthAnchor.constraint(equalToConstant: 24).isActive = true
     details.heightAnchor.constraint(equalToConstant: 24).isActive = true
-    let spacer = NSView()
-    let primary = horizontal([dot, name, address, stateLabel, spacer, details], spacing: 4)
+    let primary = horizontal([openButton, details], spacing: 0)
     primary.distribution = .fill
     primary.identifier = NSUserInterfaceItemIdentifier("port-row-\(port.id)")
     primary.widthAnchor.constraint(equalToConstant: 344).isActive = true

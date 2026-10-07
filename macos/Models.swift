@@ -267,6 +267,53 @@ final class CoreBridge {
 }
 
 final class ActionButton: NSButton {
+  private var hoverTracking: NSTrackingArea?
+  private(set) var isHovered = false
+  override var isEnabled: Bool {
+    didSet {
+      if !isEnabled { isHovered = false }
+      needsDisplay = true
+      window?.invalidateCursorRects(for: self)
+    }
+  }
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    if let hoverTracking { removeTrackingArea(hoverTracking) }
+    let area = NSTrackingArea(
+      rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self,
+      userInfo: nil)
+    hoverTracking = area
+    addTrackingArea(area)
+    if let window, window.isVisible {
+      isHovered =
+        isEnabled
+        && visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+    } else {
+      isHovered = false
+    }
+    needsDisplay = true
+  }
+  override func mouseEntered(with event: NSEvent) {
+    isHovered = isEnabled
+    needsDisplay = true
+  }
+  override func mouseExited(with event: NSEvent) {
+    isHovered = false
+    needsDisplay = true
+  }
+  override func resetCursorRects() {
+    super.resetCursorRects()
+    if isEnabled { addCursorRect(visibleRect, cursor: .pointingHand) }
+  }
+  private func drawHover() {
+    NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
+    NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).fill()
+  }
+  override func draw(_ dirtyRect: NSRect) {
+    if isHovered && isEnabled && !isBordered { drawHover() }
+    super.draw(dirtyRect)
+    if isHovered && isEnabled && isBordered { drawHover() }
+  }
   var invoke: (() -> Void)?
   init(_ title: String, action: @escaping () -> Void) {
     super.init(frame: .zero)
