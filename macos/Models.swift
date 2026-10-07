@@ -267,11 +267,58 @@ final class CoreBridge {
 }
 
 final class ActionButton: NSButton {
+  private static let hoveredButtons = NSMapTable<NSView, ActionButton>.weakToWeakObjects()
+  private weak var hoverScope: NSView?
   private var hoverTracking: NSTrackingArea?
+  private func setHovered(_ hovered: Bool) {
+    if hovered {
+      var root: NSView = self
+      while let parent = root.superview { root = parent }
+      if let previous = Self.hoveredButtons.object(forKey: root), previous !== self {
+        previous.setHovered(false)
+      }
+      if let scope = hoverScope, scope !== root,
+        Self.hoveredButtons.object(forKey: scope) === self
+      {
+        Self.hoveredButtons.removeObject(forKey: scope)
+      }
+      hoverScope = root
+      Self.hoveredButtons.setObject(self, forKey: root)
+    } else {
+      if let scope = hoverScope, Self.hoveredButtons.object(forKey: scope) === self {
+        Self.hoveredButtons.removeObject(forKey: scope)
+      }
+      hoverScope = nil
+    }
+    if isHovered != hovered {
+      isHovered = hovered
+      needsDisplay = true
+    }
+  }
+  private func synchronizeHover() {
+    guard let window, window.isVisible, let content = window.contentView else {
+      setHovered(false)
+      return
+    }
+    let point =
+      content.superview?.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+      ?? window.mouseLocationOutsideOfEventStream
+    var hit = content.hitTest(point)
+    while let view = hit, !(view is ActionButton) { hit = view.superview }
+    setHovered(isEnabled && hit === self)
+  }
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    setHovered(false)
+    super.viewWillMove(toWindow: newWindow)
+  }
+  override func viewWillMove(toSuperview newSuperview: NSView?) {
+    setHovered(false)
+    super.viewWillMove(toSuperview: newSuperview)
+  }
   private(set) var isHovered = false
   override var isEnabled: Bool {
     didSet {
-      if !isEnabled { isHovered = false }
+      if !isEnabled { setHovered(false) }
       needsDisplay = true
       window?.invalidateCursorRects(for: self)
     }
@@ -284,22 +331,13 @@ final class ActionButton: NSButton {
       userInfo: nil)
     hoverTracking = area
     addTrackingArea(area)
-    if let window, window.isVisible {
-      isHovered =
-        isEnabled
-        && visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
-    } else {
-      isHovered = false
-    }
-    needsDisplay = true
+    synchronizeHover()
   }
   override func mouseEntered(with event: NSEvent) {
-    isHovered = isEnabled
-    needsDisplay = true
+    if window?.isVisible == true { synchronizeHover() } else { setHovered(isEnabled) }
   }
   override func mouseExited(with event: NSEvent) {
-    isHovered = false
-    needsDisplay = true
+    setHovered(false)
   }
   override func resetCursorRects() {
     super.resetCursorRects()
@@ -310,6 +348,7 @@ final class ActionButton: NSButton {
     NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5).fill()
   }
   override func draw(_ dirtyRect: NSRect) {
+    if window?.isVisible == true { synchronizeHover() }
     if isHovered && isEnabled && !isBordered { drawHover() }
     super.draw(dirtyRect)
     if isHovered && isEnabled && isBordered { drawHover() }

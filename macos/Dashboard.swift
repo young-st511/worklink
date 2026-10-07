@@ -480,24 +480,36 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     let actualAddress =
       actualHost.contains(":")
       ? "[\(actualHost)]:\(port.endpoint.remotePort)" : "\(actualHost):\(port.endpoint.remotePort)"
+    let urlLabel = label(url, size: 10, color: .secondaryLabelColor)
+    urlLabel.maximumNumberOfLines = 1
+    urlLabel.lineBreakMode = .byTruncatingMiddle
+    urlLabel.toolTip = url
+    urlLabel.setAccessibilityLabel(url)
+    urlLabel.widthAnchor.constraint(equalToConstant: 234).isActive = true
+    let copyAddress = ActionButton("주소 복사") {
+      NSPasteboard.general.clearContents()
+      NSPasteboard.general.setString(url, forType: .string)
+    }
+    copyAddress.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "주소 복사")
+    copyAddress.imagePosition = .imageOnly
+    copyAddress.toolTip = "주소 복사"
+    copyAddress.setAccessibilityLabel("주소 복사")
+    copyAddress.widthAnchor.constraint(equalToConstant: 28).isActive = true
+    copyAddress.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let titleButton = ActionButton("제목 확인") { [weak self] in self?.titleRefresh?(port) }
+    titleButton.font = .systemFont(ofSize: 10)
+    titleButton.widthAnchor.constraint(equalToConstant: 70).isActive = true
+    titleButton.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    let detailActions = horizontal([urlLabel, copyAddress, titleButton], spacing: 6)
+    detailActions.identifier = NSUserInterfaceItemIdentifier("port-detail-actions-\(port.id)")
+    detailActions.heightAnchor.constraint(equalToConstant: 24).isActive = true
     var rows: [NSView] = [
-      primary, label(url, size: 10, color: .secondaryLabelColor),
-      label(
-        "원격 \(port.host) / \(actualAddress)",
-        size: 10,
-        color: .secondaryLabelColor),
+      primary, detailActions,
+      label("원격 \(port.host) / \(actualAddress)", size: 10, color: .secondaryLabelColor),
     ]
     if let error = connection?.error, !error.isEmpty {
       rows.append(label(error, size: 10, color: .systemRed))
     }
-    rows.append(
-      horizontal([
-        ActionButton("주소 복사") {
-          NSPasteboard.general.clearContents()
-          NSPasteboard.general.setString(url, forType: .string)
-        },
-        ActionButton("제목 확인") { [weak self] in self?.titleRefresh?(port) },
-      ]))
     return vertical(rows, spacing: 3)
   }
   private func disabledReason(_ job: ImageJob, state: CoreState, original: Bool) -> String? {

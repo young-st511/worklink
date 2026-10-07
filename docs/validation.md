@@ -156,3 +156,17 @@ check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 
 - 테스트는 별도 fixture의 직접 합성 handler 호출·hitTest·offscreen 렌더입니다. 실제 제품 mouse enter/exit·손 커서·툴팁·브라우저 클릭은 CUA 접근 거부로 미검증이며 다른 UI 자동화로 우회하지 않았습니다.
 
 두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어의 별도 임시 앱 빌드와 native self-test도 통과했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명과 Info/실행 파일/core/Assets.car/icns hash를 확인했습니다. 사용자 설정·이미지·원격 helper는 변경하지 않았으며 제품 앱 자동 재시작/GitHub 작업은 하지 않았습니다. 공개 소스 검수 통과.
+
+
+## 호버 잔상과 상세 행 개선
+
+2026-10-07 실제 사용자 화면에서 여러 버튼의 강조가 남는 문제를 확인했습니다. 이전 hover 상태가 버튼별로 독립되어 있었고 tracking 갱신 중 임시 frame 포함 검사에 의존했습니다. root별 단일 weak hover 소유권으로 이전 강조를 해제하고 실제 content hitTest를 통해 tracking 갱신과 visible draw 시 대상을 동기화합니다. 뷰 이동/제거와 비활성 전환에서도 해제하며 상태가 변경될 때만 다시 그립니다. 별도 polling은 없습니다.
+
+- native `multiple buttons retain hover` 실패를 확인한 후 구현했습니다. hover 소유권 이전·disabled/exit·행 click target·기존 popup/editor/IME/clipboard/lifecycle 회귀 self-test 통과.
+- 펼친 상세의 URL·주소 복사 아이콘·제목 확인을 동일 24 point 행으로 줄였습니다. 긴 URL tooltip/접근성 전체값과 복사 원문은 보존합니다. 행 높이/복사 icon native 검사 통과.
+- light/dark 실제 AppKit 상세 PNG를 열어 정렬·대비·겹침 없음을 확인했습니다. Go race/test/vet·아이콘 검사·diff 검사 통과.
+- 합성 handler와 offscreen 검증이며 실제 제품 마우스 이동/상세 클릭은 CUA 접근 거부로 미검증입니다. 다른 UI 자동화로 우회하지 않았습니다.
+
+코드 리뷰에서 전역 hover 소유권이 서로 다른 창의 재그림을 연쇄시킬 수 있음을 발견해 root별 weak-to-weak map으로 범위를 제한했습니다. 독립 root의 상태 보존과 같은 root의 이전 해제, 부모 제거 후 해제 회귀 테스트를 추가했습니다. offscreen 부모 제거에는 window callback이 없어 테스트가 실패했으며 superview 이동 콜백에도 해제를 추가한 뒤 전체 native 검증이 통과했습니다.
+
+두 병렬 리뷰 재검증 추가 blocker 없음. 코드 리뷰어의 최신 소스 독립 빌드/native 검증과 dark 렌더도 통과했습니다. `/Applications` 설치본을 atomic 교체하고 서명·빌드 hash·공개 소스 검수를 통과했습니다. 사용자 설정/원본/원격 helper 변경이나 제품 자동 재시작/GitHub 작업은 하지 않았습니다.

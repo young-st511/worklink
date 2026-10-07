@@ -618,6 +618,20 @@ func nativeSelfTest() throws {
     abs(hoverBefore.alphaComponent - hoverAfter.alphaComponent) > 0.05
       || abs(hoverBefore.blueComponent - hoverAfter.blueComponent) > 0.02,
     "hover has no visible feedback")
+  let otherHover = ActionButton("다른 버튼") {}
+  compactPanel.view.addSubview(otherHover)
+  otherHover.mouseEntered(with: hoverEvent)
+  try require(otherHover.isHovered && !addressButton.isHovered, "multiple buttons retain hover")
+  let independentRoot = NSView()
+  let independentHover = ActionButton("별도 창") {}
+  independentRoot.addSubview(independentHover)
+  independentHover.mouseEntered(with: hoverEvent)
+  try require(
+    independentHover.isHovered && otherHover.isHovered, "independent roots steal hover ownership")
+  otherHover.removeFromSuperview()
+  try require(!otherHover.isHovered, "removed button retains hover")
+  independentHover.mouseExited(with: hoverEvent)
+  otherHover.mouseExited(with: hoverEvent)
   addressButton.mouseExited(with: hoverEvent)
   try require(!addressButton.isHovered, "hover did not clear")
   disabledAction.setDisabledReason("비활성")
@@ -641,6 +655,13 @@ func nativeSelfTest() throws {
       && actionButtons(compactPanel.view).contains { $0.title == "제목 확인" },
     "compact disclosure removed details actions")
   try require(opened == nil, "disclosure opened browser")
+  let detailRows = taggedViews(compactPanel.view, prefix: "port-detail-actions-")
+  try require(
+    detailRows.count == 1 && abs(detailRows[0].frame.height - 24) < 0.1,
+    "detail URL and actions are not compact")
+  try require(
+    actionButtons(detailRows[0]).contains { $0.title == "주소 복사" && $0.imagePosition == .imageOnly },
+    "detail copy is not an icon")
   for (on, status, reason) in [
     (false, "ready", "업무 OFF"), (true, "waiting", "서버 연결 대기"), (true, "conflict", "로컬 포트 충돌"),
   ] {
