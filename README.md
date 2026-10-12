@@ -45,4 +45,10 @@ JSON 출력의 CPU 비율은 한 코어를 100%로 보는 **실험 프로세스�
 
 ## 저장소
 
-공개 저장소: [young-st511/worklink](https://github.com/young-st511/worklink). 현재 소스에서 직접 빌드하는 초기 버전이며, 배포 라이선스는 아직 정하지 않았습니다.
+공개 저장소: [young-st511/worklink](https://github.com/young-st511/worklink). 현재 소스에서 직접 빌드하는 초기 버전입니다.
+
+## 라이선스
+
+Copyright (c) 2026 young-st511.
+
+Worklink의 코드·문서·자체 제작 아이콘은 [GNU GPL v3.0](LICENSE)으로 배포합니다. SPDX 식별자는 `GPL-3.0-only`입니다.
