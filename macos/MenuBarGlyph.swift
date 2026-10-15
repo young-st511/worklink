@@ -84,9 +84,11 @@ enum MenuBarGlyph {
         frame.lineWidth = 0.85
         frame.stroke()
         let mountain = NSBezierPath()
-        mountain.move(to: NSPoint(x: 12.2, y: 1.9))
-        mountain.line(to: NSPoint(x: 14.2, y: 4.1))
-        mountain.line(to: NSPoint(x: 16.3, y: 1.9))
+        mountain.move(to: NSPoint(x: 12.1, y: 1.9))
+        mountain.line(to: NSPoint(x: 13.2, y: 3.1))
+        mountain.line(to: NSPoint(x: 14.1, y: 2.2))
+        mountain.line(to: NSPoint(x: 15.3, y: 4.6))
+        mountain.line(to: NSPoint(x: 16.4, y: 1.9))
         mountain.lineWidth = 0.85
         mountain.lineCapStyle = .round
         mountain.lineJoinStyle = .round

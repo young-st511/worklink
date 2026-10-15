@@ -200,3 +200,7 @@ Native self-test와 diff 검사를 통과했습니다. `/Applications/Worklink.a
 - 실제 제품 메뉴바 mouse/배치 조작은 CUA 접근 거부로 미검증이며 다른 UI 자동화로 우회하지 않았습니다.
 
 Native 회귀·Go race/test/vet·아이콘 검사·diff 검사·공개 소스 검수와 두 병렬 리뷰를 통과했습니다. 코드 리뷰어는 별도 1x/2x/3x 검증으로 8개 18pt template과 상태 mark 이동을 확인했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·원본·원격 helper는 변경하지 않았고 앱 자동 재시작과 GitHub push는 하지 않았습니다.
+
+사용자 후속 피드백으로 사진 배지 안을 작은 왼쪽 봉우리와 큰 오른쪽 봉우리 두 개로 변경했습니다. 배지 테두리·18pt canvas·체인·상태 표시는 유지하며 기존 native 회귀와 light/dark 실제 크기 렌더로 확인합니다.
+
+두 봉우리 변경의 native self-test·diff 검사와 밝은/어두운 렌더 확인을 통과했고 `/Applications` 설치본의 서명·빌드 hash를 확인했습니다. 실제 메뉴바 마우스 조작과 앱 자동 재시작/GitHub push는 하지 않았습니다.
