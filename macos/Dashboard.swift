@@ -29,6 +29,10 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   var headerFrame: NSRect { pinnedHeader?.frame ?? .zero }
   var footerFrame: NSRect { pinnedFooter?.frame ?? .zero }
   func resetScroll() {
+    if showsAllImages {
+      showsAllImages = false
+      if let lastState { render(lastState) }
+    }
     bodyScroll?.contentView.scroll(to: .zero)
     if let bodyScroll { bodyScroll.reflectScrolledClipView(bodyScroll.contentView) }
   }
@@ -51,6 +55,7 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   var expired: Set<String> = []
   var expanded: Set<String> = []
   private var lastState: CoreState?
+  private var showsAllImages = false
   private var layoutConstraints: [NSLayoutConstraint] = []
   private var bodyStack: NSStackView?
   private var bodyContent: FlippedView?
@@ -229,40 +234,37 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       }
     }
     sections.append(separator())
-    let manage = ActionButton("관리…") { [weak self] in self?.settings?() }
-    manage.isBordered = false
-    manage.font = .systemFont(ofSize: 10)
-    manage.contentTintColor = .secondaryLabelColor
-    manage.toolTip = "서버 이름·로컬 포트·SSH 대상 설정"
-    let headingSpace = NSView()
-    let serverHeading = horizontal([
-      label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true), headingSpace, manage,
-    ])
-    serverHeading.distribution = .fill
-    serverHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
-    serverHeading.heightAnchor.constraint(equalToConstant: 18).isActive = true
-    sections.append(serverHeading)
-    sections.append(quickForm)
-    if state.config.ports.isEmpty {
-      sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
+    let imageTitle = label(
+      "최근 이미지 · \(state.config.imageHost.isEmpty ? "전송 대상 미선택" : state.config.imageHost)",
+      size: 11, color: .secondaryLabelColor, bold: true)
+    imageTitle.maximumNumberOfLines = 1
+    imageTitle.lineBreakMode = .byTruncatingTail
+    imageTitle.toolTip = imageTitle.stringValue
+    imageTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    var imageHeadingViews: [NSView] = [imageTitle]
+    if state.jobs.count > 3 {
+      let showMore = ActionButton(showsAllImages ? "접기" : "전체 \(min(state.jobs.count, 5))개 보기") {
+        [weak self] in
+        guard let self else { return }
+        showsAllImages.toggle()
+        if let state = lastState { render(state) }
+      }
+      showMore.isBordered = false
+      showMore.font = .systemFont(ofSize: 10)
+      showMore.contentTintColor = .secondaryLabelColor
+      showMore.toolTip = showsAllImages ? "최신 3개만 표시합니다." : "최근 이미지를 최대 5개 표시합니다."
+      showMore.setAccessibilityLabel(showMore.title)
+      imageHeadingViews += [NSView(), showMore]
     }
-    if !state.config.ports.isEmpty {
-      let sortedPorts = state.config.ports.enumerated().sorted {
-        if $0.element.localPort == $1.element.localPort { return $0.offset < $1.offset }
-        return $0.element.localPort < $1.element.localPort
-      }.map { $0.element }
-      sections.append(
-        vertical(sortedPorts.map { compactPortRow($0, state: state) }, spacing: 3))
-    }
-    sections.append(separator())
-    sections.append(
-      label(
-        "최근 이미지 · \(state.config.imageHost.isEmpty ? "전송 대상 미선택" : state.config.imageHost)",
-        size: 11, color: .secondaryLabelColor, bold: true))
+    let imageHeading = horizontal(imageHeadingViews)
+    imageHeading.distribution = .fill
+    imageHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
+    imageHeading.heightAnchor.constraint(equalToConstant: 18).isActive = true
+    sections.append(imageHeading)
     if state.jobs.isEmpty {
       sections.append(label("업무 ON 후 캡처하면 원본을 한 번 전송합니다.", size: 11, color: .secondaryLabelColor))
     }
-    for job in state.jobs.prefix(5) {
+    for job in state.jobs.prefix(showsAllImages ? 5 : 3) {
       let stateText: String
       if expired.contains(job.id) {
         stateText = "원격 파일 만료"
@@ -334,6 +336,32 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       row.heightAnchor.constraint(equalToConstant: 28).isActive = true
       row.identifier = NSUserInterfaceItemIdentifier("image-row-\(job.id)")
       sections.append(row)
+    }
+    sections.append(separator())
+    let manage = ActionButton("관리…") { [weak self] in self?.settings?() }
+    manage.isBordered = false
+    manage.font = .systemFont(ofSize: 10)
+    manage.contentTintColor = .secondaryLabelColor
+    manage.toolTip = "서버 이름·로컬 포트·SSH 대상 설정"
+    let headingSpace = NSView()
+    let serverHeading = horizontal([
+      label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true), headingSpace, manage,
+    ])
+    serverHeading.distribution = .fill
+    serverHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
+    serverHeading.heightAnchor.constraint(equalToConstant: 18).isActive = true
+    sections.append(serverHeading)
+    sections.append(quickForm)
+    if state.config.ports.isEmpty {
+      sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
+    }
+    if !state.config.ports.isEmpty {
+      let sortedPorts = state.config.ports.enumerated().sorted {
+        if $0.element.localPort == $1.element.localPort { return $0.offset < $1.offset }
+        return $0.element.localPort < $1.element.localPort
+      }.map { $0.element }
+      sections.append(
+        vertical(sortedPorts.map { compactPortRow($0, state: state) }, spacing: 3))
     }
     let footer = vertical(
       [

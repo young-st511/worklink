@@ -11,7 +11,7 @@
 - S7: 등록 포트 연결·IPv4/IPv6 localhost·충돌 오류·재연결·등록 endpoint만 확인, title은 요청 기반 bounded HTTP.
 - S8: 전송 직렬화·8개/256MiB 제한·64MiB 원본 상한 설정 가능, generation/host 고정·retry/ACK 복구·restart 자동 전송 금지.
 - S9: UI 명령/상태 JSON stdio와 CLI. OFF에서 세션/정기 통신 정지, 재연결 backoff·인증 오류 반복 금지.
-- S10: AppKit 메뉴바 좌클릭 목록/우클릭 토글·OFF dimmed+다른 모양·무음·최근 5개·브라우저 열기·접속 상세 펼치기.
+- S10: AppKit 메뉴바 좌클릭 목록/우클릭 토글·OFF dimmed+다른 모양·무음·최근 최대 5개(S32 기본 3개)·브라우저 열기·접속 상세 펼치기.
 - S11: 서버/SSH 대상 등록·편집·삭제·설정, 느슨한 입력 미리보기·오류/후보 선택, 수동 명칭 우선.
 - S12: 네이티브 changeCount 1초 감지·원본 표현 보존·단일 작업·경쟁 시 clipboard 보존·잠금/절전 pause·접근 거부 상태.
 - S13: 앱 번들에 Go 바이너리 포함·macOS 로그인 시작·일일 cleanup 설치/제거 도구, 개발 저장 공간 분리.
@@ -58,9 +58,9 @@ S19–S22 구현: `AppDelegate.setClipboardMode/registerQuickPort/updateIcon`, `
 
 ## 컴팩트한 포트 목록
 
-- S23: 기본 포트 행은 상태점·이름·짧은 localhost 주소·상태·펼치기를 한 줄(24 point)에 표시합니다. 전체 URL과 오류는 tooltip 및 상세에서 확인하고, 주소/이름 클릭은 기존 URL의 scheme/path/query/fragment를 유지합니다. 포트 행 간 간격을 줄이고 관리 링크는 개발 서버 heading에 합칩니다. 빠른 등록 안내는 높이를 고정한 한 줄로 표시합니다. 5개 일반 포트가 기본 body viewport에 들어가고 팝업 크기·모드 전환·입력/cursor/IME 보존은 유지합니다.
+- S23: 기본 포트 행은 상태점·이름·짧은 localhost 주소·상태·펼치기를 한 줄(24 point)에 표시합니다. 전체 URL과 오류는 tooltip 및 상세에서 확인하고, 주소/이름 클릭은 기존 URL의 scheme/path/query/fragment를 유지합니다. 포트 행 간 간격을 줄이고 관리 링크는 개발 서버 heading에 합칩니다. 빠른 등록 안내는 높이를 고정한 한 줄로 표시합니다. 팝업 크기·모드 전환·입력/cursor/IME 보존은 유지합니다. 초기 viewport의 우선순위는 S32가 대체하며 포트 5개의 동시 노출은 요구하지 않습니다.
 
-S23 구현: `DashboardController.compactPortRow/render/quickForm`. 24 point 행/3 point gap, 전체 URL·오류 tooltip/펼친 상세, heading의 관리 링크와 고정 한 줄 안내를 사용합니다. `nativeSelfTest`는 일반 완료 notice가 있는 5개 포트의 viewport 적합·행 높이, HTTPS/path/query/fragment를 가진 브라우저 콜백·상세 동작을 확인합니다.
+S23 구현: `DashboardController.compactPortRow/render/quickForm`. 24 point 행/3 point gap, 전체 URL·오류 tooltip/펼친 상세, heading의 관리 링크와 고정 한 줄 안내를 사용합니다. `nativeSelfTest`는 일반 완료 notice가 있는 5개 포트의 행 높이와 첫 서버 접근 가능 여부(S32 이미지 우선), HTTPS/path/query/fragment를 가진 브라우저 콜백·상세 동작을 확인합니다.
 
 ## 상단 한 줄 업무 제어
 
@@ -74,9 +74,9 @@ S24 구현: `DashboardController.render/toggleWork`, `MenuWorkSwitch.acceptsFirs
 
 S25 구현: `Endpoint.Candidates/AllowsTarget`, `remote.Serve(check)`, `Engine.cycle/portStatus/failedPeer`, `PortStatus.remoteHost`, `DashboardController.compactPortRow`. check 응답의 literal target으로 forward하고 family 전환 실패 시 해당 host 포트의 ready를 무효화·publish합니다.
 
-- S26: 최근 이미지 행은 한 줄 28 point로 시간·실제 작업 대상·용량·짧은 상태·작은 경로/원본 복사 버튼을 표시합니다. 전체 metadata(형식 포함)·오류·비활성 이유는 tooltip/accessibility로 유지합니다. 최근 5개, original copy/copy_path/retry callback·clipboard 준비됨 추적은 유지합니다. 일반 5개 이미지가 body viewport에 들어갑니다.
+- S26: 최근 이미지 행은 한 줄 28 point로 시간·실제 작업 대상·용량·짧은 상태·작은 경로/원본 복사 버튼을 표시합니다. 전체 metadata(형식 포함)·오류·비활성 이유는 tooltip/accessibility로 유지합니다. 최근 최대 5개, original copy/copy_path/retry callback·clipboard 준비됨 추적은 유지합니다. 기본 표시 개수·위치·viewport 기준은 S32가 대체합니다.
 
-S26 구현: `DashboardController.render`의 28 point image row, metadata/state tooltip/AX와 compactAction icon-only control. 기존 copy/restore/retry와 copiedCount guard를 유지합니다. native self-test는 5개 viewport/행 높이·두 복사 callback·help를 확인합니다.
+S26 구현: `DashboardController.render`의 28 point image row, metadata/state tooltip/AX와 compactAction icon-only control. 기존 copy/restore/retry와 copiedCount guard를 유지합니다. native self-test는 S32 기본 3개 viewport/행 높이·펼침 5개·두 복사 callback·help를 확인합니다.
 
 - S27: 활성 버튼의 hover 강조와 pointing cursor를 제공합니다. 포트 행에서 화살표 외 모든 영역은 같은 서버 열기 버튼으로 처리하며 연결 가능일 때만 활성화합니다. 상세 화살표는 별도의 버튼으로 유지합니다. 대기/OFF/충돌은 열기 비활성+이유 tooltip, 상세는 열 수 있습니다. 내부 표시 label은 click을 가로채지 않고 disabled hover/실행을 차단합니다. Dark mode·고정 행/팝업·quick editor/IME는 유지하며 polling을 추가하지 않습니다.
 
@@ -95,3 +95,7 @@ S30 구현: `MenuBarGlyph.image/make`, `AppDelegate.applicationDidFinishLaunchin
 - S31: S30 나란한 사진 표시를 대체해 모든 모드에서 18×18pt 체인을 유지하고 원본 유지 ON에는 오른쪽 아래 6.5×5.5pt 테두리·산 사진 배지를 추가합니다. 배지와 중복되는 오류/일시 정지 mark는 원본 유지 ON일 때만 왼쪽 위로 옮깁니다. 설정에 따른 메뉴바 폭 변화는 없고 즉시 갱신/tooltip/접근성을 유지합니다.
 
 S31 구현: `MenuBarGlyph.make`, `AppDelegate.applicationDidFinishLaunching` 및 native glyph 검증. 모든 조합은 18pt template이며 keep ON의 사진 배지는 오른쪽 아래, 상태 mark는 왼쪽 위에 배치합니다. S30의 넓은 canvas/나란한 표시를 대체합니다.
+
+- S32: 최근 이미지를 개발 서버보다 위에 표시합니다. 기본 최신 3개, 4–5개가 있으면 제목 옆 전체 N개 보기/접기로 최대 5개를 전환합니다. 상태 갱신 중 펼침을 유지하고 메뉴 재열기 시 기본 3개·맨 위로 돌아옵니다. 다수 포트에서도 기본 3개 이미지가 초기 viewport에 보이며 기존 복사/원본/재시도·입력/IME·고정 팝업/업무 제어를 유지합니다. 기록/전송 데이터는 자르지 않고 표시만 제한합니다.
+
+S32 구현: `DashboardController.render/resetScroll`. 서버 section 앞의 이미지 section은 기본3/최대5이며 제목 옆 버튼으로 전환합니다. `nativeSelfTest`는 0/1/3/4/5개, refresh 펼침 보존·접기·재열기 기본값·다수 포트에서 이미지 우선/viewport, 기존 콜백과 입력/IME를 확인합니다.

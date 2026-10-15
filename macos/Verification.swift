@@ -100,6 +100,13 @@ func renderPreviews(_ directory: URL) throws {
         port.endpoint.remotePort = 5190 + index
         return port
       }
+      if count == 8 {
+        state.jobs = (0..<5).map { index in
+          var job = state.jobs[0]
+          job.id = String(format: "%032x", index + 20)
+          return job
+        }
+      }
       state.ports = state.config.ports.map {
         PortStatus(id: $0.id, status: "ready", error: nil, reachable: true)
       }
@@ -113,6 +120,16 @@ func renderPreviews(_ directory: URL) throws {
         portsPanel.view,
         to: directory.appendingPathComponent(
           "ports-\(count)-\(style == .aqua ? "light" : "dark").png"))
+      if count == 8 {
+        func imageButtons(_ root: NSView) -> [ActionButton] {
+          (root as? ActionButton).map { [$0] } ?? root.subviews.flatMap { imageButtons($0) }
+        }
+        imageButtons(portsPanel.view).first { $0.title == "전체 5개 보기" }?.performClick(nil)
+        try renderNative(
+          portsPanel.view,
+          to: directory.appendingPathComponent(
+            "images-all-ports-8-\(style == .aqua ? "light" : "dark").png"))
+      }
       if count == 1 {
         func buttons(_ root: NSView) -> [ActionButton] {
           (root as? ActionButton).map { [$0] } ?? root.subviews.flatMap { buttons($0) }
@@ -619,8 +636,8 @@ func nativeSelfTest() throws {
   let document = compactPanel.bodyScroll!.documentView!
   let viewport = compactPanel.bodyScroll!.contentView.bounds
   try require(
-    compactRows.allSatisfy { viewport.contains($0.convert($0.bounds, to: document)) },
-    "five ports do not fit in initial viewport")
+    compactRows.first.map { viewport.intersects($0.convert($0.bounds, to: document)) } == true,
+    "first server is not reachable below images")
   var opened: PortConfig?
   compactPanel.open = { opened = $0 }
   guard
@@ -744,15 +761,69 @@ func nativeSelfTest() throws {
     return job
   }
   imagePanel.render(imageState)
-  let imageRows = taggedViews(imagePanel.view, prefix: "image-row-")
+  var imageRows = taggedViews(imagePanel.view, prefix: "image-row-")
   try require(
-    imageRows.count == 5 && imageRows.allSatisfy { abs($0.frame.height - 28) < 0.1 },
+    imageRows.count == 3 && imageRows.allSatisfy { abs($0.frame.height - 28) < 0.1 },
     "image list is not compact")
   let imageDocument = imagePanel.bodyScroll!.documentView!
   try require(
     imageRows.allSatisfy {
       imagePanel.bodyScroll!.contentView.bounds.contains($0.convert($0.bounds, to: imageDocument))
-    }, "five images do not fit")
+    }, "default images do not fit")
+  guard let showAll = actionButtons(imagePanel.view).first(where: { $0.title == "전체 5개 보기" }) else {
+    throw NSError(domain: "Worklink QA", code: 1)
+  }
+  showAll.performClick(nil)
+  try require(
+    taggedViews(imagePanel.view, prefix: "image-row-").count == 5,
+    "show all did not expose five images")
+  imagePanel.render(imageState)
+  try require(
+    taggedViews(imagePanel.view, prefix: "image-row-").count == 5, "state refresh collapsed images")
+  actionButtons(imagePanel.view).first(where: { $0.title == "접기" })?.performClick(nil)
+  try require(
+    taggedViews(imagePanel.view, prefix: "image-row-").count == 3,
+    "collapse did not restore three images")
+  actionButtons(imagePanel.view).first(where: { $0.title == "전체 5개 보기" })?.performClick(nil)
+  imagePanel.resetScroll()
+  try require(
+    taggedViews(imagePanel.view, prefix: "image-row-").count == 3,
+    "reopen did not restore three images")
+  var manyPortsState = compactState
+  manyPortsState.jobs = imageState.jobs
+  imagePanel.render(manyPortsState)
+  imageRows = taggedViews(imagePanel.view, prefix: "image-row-")
+  let firstServer = taggedViews(imagePanel.view, prefix: "port-row-")[0]
+  let imagesDocument = imagePanel.bodyScroll!.documentView!
+  let imagesViewport = imagePanel.bodyScroll!.contentView.bounds
+  try require(
+    imageRows.count == 3
+      && imageRows.allSatisfy {
+        let frame = $0.convert($0.bounds, to: imagesDocument)
+        return imagesViewport.contains(frame)
+          && frame.maxY < firstServer.convert(firstServer.bounds, to: imagesDocument).minY
+      }, "servers pushed images outside initial viewport")
+  for count in [0, 1, 3] {
+    var smallState = imageState
+    smallState.jobs = Array(imageState.jobs.prefix(count))
+    imagePanel.render(smallState)
+    try require(
+      taggedViews(imagePanel.view, prefix: "image-row-").count == count
+        && !actionButtons(imagePanel.view).contains {
+          $0.title.hasPrefix("전체") || $0.title == "접기"
+        }, "unnecessary image disclosure")
+  }
+  var fourImages = imageState
+  fourImages.jobs = Array(imageState.jobs.prefix(4))
+  imagePanel.render(fourImages)
+  guard let showFour = actionButtons(imagePanel.view).first(where: { $0.title == "전체 4개 보기" })
+  else { throw NSError(domain: "Worklink QA", code: 1) }
+  showFour.performClick(nil)
+  try require(
+    taggedViews(imagePanel.view, prefix: "image-row-").count == 4, "four-image count is misleading")
+  imagePanel.resetScroll()
+  imagePanel.render(imageState)
+  imageRows = taggedViews(imagePanel.view, prefix: "image-row-")
   var copiedID: String?
   var restoredID: String?
   imagePanel.copy = { copiedID = $0.id }
