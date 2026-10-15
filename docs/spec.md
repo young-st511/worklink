@@ -91,3 +91,7 @@ S28 구현: `ActionButton.setHovered/synchronizeHover/viewWillMove/draw`, `Dashb
 - S30: 원본 유지 ON이면 기존 18pt 체인 옆에 테두리·산만 있는 사진 표시를 나란히 추가합니다. OFF는 기존 체인만 사용합니다. 업무 ON/OFF·일시 정지·오류 표시와 template 색상·OFF alpha는 유지합니다. 메뉴바 폭은 표시를 잘라내지 않도록 맞추고 설정 변경 즉시 이미지·tooltip·접근성을 갱신합니다. 이미지 처리/클립보드/SSH 동작은 바꾸지 않습니다.
 
 S30 구현: `MenuBarGlyph.image/make`, `AppDelegate.applicationDidFinishLaunching/setClipboardMode/updateIcon`. 18pt 기존 체인과 상태 mark를 유지하고 원본 유지 모드만 32×18pt canvas의 사진 표시를 추가합니다. 8개 이미지를 캐시하고 variableLength status item으로 표시합니다. 모드 변경 시 즉시 갱신하며 tooltip/접근성 값에도 반영합니다.
+
+- S31: S30 나란한 사진 표시를 대체해 모든 모드에서 18×18pt 체인을 유지하고 원본 유지 ON에는 오른쪽 아래 6.5×5.5pt 테두리·산 사진 배지를 추가합니다. 배지와 중복되는 오류/일시 정지 mark는 원본 유지 ON일 때만 왼쪽 위로 옮깁니다. 설정에 따른 메뉴바 폭 변화는 없고 즉시 갱신/tooltip/접근성을 유지합니다.
+
+S31 구현: `MenuBarGlyph.make`, `AppDelegate.applicationDidFinishLaunching` 및 native glyph 검증. 모든 조합은 18pt template이며 keep ON의 사진 배지는 오른쪽 아래, 상태 mark는 왼쪽 위에 배치합니다. S30의 넓은 canvas/나란한 표시를 대체합니다.

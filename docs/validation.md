@@ -189,3 +189,14 @@ Native self-test와 diff 검사를 통과했습니다. `/Applications/Worklink.a
 모든 native 회귀와 Go race/test/vet, 아이콘 검사, diff 검사 및 공개 소스 검수를 통과했습니다. 스펙 리뷰에서 사진 테두리 stroke가 canvas를 0.125pt 넘는 문제를 발견해 최대 x31.875pt로 안에 들도록 수정했고 재검증했습니다.
 
 두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어는 별도 glyph fixture의 1x/2x/3x 체인 픽셀 보존과 8개 캐시 동일성도 확인했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·원본·원격 helper는 변경하지 않았고 제품 앱 자동 재시작과 GitHub push는 하지 않았습니다.
+
+
+## 사진 표시를 작은 배지로 변경
+
+사용자 실제 메뉴바 피드백으로 S30의 나란한 사진 표시를 S31의 오른쪽 아래 배지로 대체했습니다. 모든 모드의 canvas를 기존 18×18pt로 통일하고 status item도 squareLength로 되돌렸습니다. 체인 크기/위치는 유지하고 원본 유지 ON일 때만 6.5×5.5pt 사진 테두리와 산을 표시합니다. keep ON에서는 오류/일시 정지 mark를 왼쪽 위로 옮겨 사진과 체인을 피합니다. 캐시·즉시 tooltip/접근성 갱신은 유지하고 클립보드·SSH 처리는 변경하지 않았습니다.
+
+- spec-first native `photo indicator missing or clipped` 실패 확인 후 구현했습니다. 모드별 18pt/template, 배지와 이동한 상태 mark 영역 밖의 기존 픽셀 일치, 작지만 비어있거나 채워지지 않은 사진 선 그림 검사와 기존 native 회귀를 확인합니다.
+- light/dark AppKit의 실제 point 크기 8조합 strip을 생성해 사진 배지의 위치와 크기·체인 보존·OFF dimming을 확인했습니다. 첫 렌더에서 왼쪽 아래 상태 mark가 체인에 가까워 왼쪽 위 빈 공간으로 옮겼습니다.
+- 실제 제품 메뉴바 mouse/배치 조작은 CUA 접근 거부로 미검증이며 다른 UI 자동화로 우회하지 않았습니다.
+
+Native 회귀·Go race/test/vet·아이콘 검사·diff 검사·공개 소스 검수와 두 병렬 리뷰를 통과했습니다. 코드 리뷰어는 별도 1x/2x/3x 검증으로 8개 18pt template과 상태 mark 이동을 확인했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·원본·원격 helper는 변경하지 않았고 앱 자동 재시작과 GitHub push는 하지 않았습니다.

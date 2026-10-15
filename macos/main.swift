@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
-    item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.target = self
     item.button?.action = #selector(statusClicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])

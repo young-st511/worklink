@@ -521,7 +521,7 @@ func nativeSelfTest() throws {
     let plain = MenuBarGlyph.image(for: mode)
     let preserved = MenuBarGlyph.image(for: mode, preservesImage: true)
     try require(
-      preserved.isTemplate && preserved.size == NSSize(width: 32, height: 18),
+      preserved.isTemplate && preserved.size == NSSize(width: 18, height: 18),
       "photo indicator missing or clipped")
     func glyphPixels(_ image: NSImage) throws -> NSBitmapImageRep {
       let rep = NSBitmapImageRep(
@@ -539,22 +539,26 @@ func nativeSelfTest() throws {
     let right = try glyphPixels(preserved)
     for y in 0..<36 {
       for x in 0..<36 {
-        try require(
-          abs(
-            (left.colorAt(x: x, y: y)?.alphaComponent ?? 0)
-              - (right.colorAt(x: x, y: y)?.alphaComponent ?? 0)) < 0.01,
-          "photo mode shrank or changed chain")
+        let photoRegion = x >= 21 && y >= 21
+        let movedStatus = (mode == .paused || mode == .problem) && x < 12 && y < 14
+        if !photoRegion && !movedStatus {
+          try require(
+            abs(
+              (left.colorAt(x: x, y: y)?.alphaComponent ?? 0)
+                - (right.colorAt(x: x, y: y)?.alphaComponent ?? 0)) < 0.01,
+            "badge changed chain outside corner")
+        }
       }
     }
     var photoPixels = 0
-    for y in 0..<36 {
-      for x in 40..<64 where (right.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+    for y in 23..<36 {
+      for x in 22..<36 where (right.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
         photoPixels += 1
       }
     }
     try require(
-      photoPixels > 35 && photoPixels < (24 * 36) / 2,
-      "photo outline/mountain missing or filled: \(photoPixels)")
+      photoPixels > 20 && photoPixels < 150,
+      "small photo outline/mountain missing or filled: \(photoPixels)")
   }
   let activeGlyph = MenuBarGlyph.image(for: .on)
   let inactiveGlyph = MenuBarGlyph.image(for: .off)

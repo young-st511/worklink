@@ -9,7 +9,7 @@ enum MenuBarGlyph {
     (preservesImage ? preservedImages : images)[mode]!
   }
   private static func make(_ mode: Mode, preservesImage: Bool = false) -> NSImage {
-    let image = NSImage(size: NSSize(width: preservesImage ? 32 : 18, height: 18), flipped: false) {
+    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) {
       _ in
       NSGraphicsContext.saveGraphicsState()
       NSColor.black.setStroke()
@@ -52,6 +52,12 @@ enum MenuBarGlyph {
       NSGraphicsContext.saveGraphicsState()
       NSColor.black.setStroke()
       NSColor.black.setFill()
+      NSGraphicsContext.saveGraphicsState()
+      if preservesImage {
+        let statusOffset = NSAffineTransform()
+        statusOffset.translateX(by: -12.5, yBy: 11)
+        statusOffset.concat()
+      }
       if mode == .paused {
         let bars = NSBezierPath()
         bars.lineWidth = 1.3
@@ -70,17 +76,18 @@ enum MenuBarGlyph {
         mark.stroke()
         NSBezierPath(ovalIn: NSRect(x: 14.3, y: 1, width: 1.4, height: 1.4)).fill()
       }
+      NSGraphicsContext.restoreGraphicsState()
       if preservesImage {
         let frame = NSBezierPath(
-          roundedRect: NSRect(x: 20.75, y: 3.5, width: 10.5, height: 11), xRadius: 1.4, yRadius: 1.4
+          roundedRect: NSRect(x: 11, y: 0.75, width: 6.5, height: 5.5), xRadius: 0.7, yRadius: 0.7
         )
-        frame.lineWidth = 1.25
+        frame.lineWidth = 0.85
         frame.stroke()
         let mountain = NSBezierPath()
-        mountain.move(to: NSPoint(x: 22, y: 5.5))
-        mountain.line(to: NSPoint(x: 26, y: 10))
-        mountain.line(to: NSPoint(x: 30, y: 5.5))
-        mountain.lineWidth = 1.25
+        mountain.move(to: NSPoint(x: 12.2, y: 1.9))
+        mountain.line(to: NSPoint(x: 14.2, y: 4.1))
+        mountain.line(to: NSPoint(x: 16.3, y: 1.9))
+        mountain.lineWidth = 0.85
         mountain.lineCapStyle = .round
         mountain.lineJoinStyle = .round
         mountain.stroke()
