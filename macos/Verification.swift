@@ -175,24 +175,27 @@ func renderPreviews(_ directory: URL) throws {
   }
   modeWindow.close()
   for style in [NSAppearance.Name.aqua, .darkAqua] {
-    let row = AppearanceBackgroundView(frame: NSRect(x: 0, y: 0, width: 330, height: 64))
+    let row = AppearanceBackgroundView(frame: NSRect(x: 0, y: 0, width: 600, height: 64))
     row.wantsLayer = true
     row.appearance = NSAppearance(named: style)
     var cells: [NSView] = []
-    for (mode, title) in [
-      (MenuBarGlyph.Mode.on, "ON"), (.off, "OFF"), (.paused, "일시 정지"), (.problem, "오류"),
-    ] {
-      let image = NSImageView(image: MenuBarGlyph.image(for: mode))
-      image.contentTintColor = .labelColor
-      image.alphaValue = mode == .off ? 0.65 : 1
-      image.widthAnchor.constraint(equalToConstant: 18).isActive = true
-      image.heightAnchor.constraint(equalToConstant: 18).isActive = true
-      let cell = vertical([image, label(title, size: 10)], spacing: 6)
-      cell.alignment = .centerX
-      cell.widthAnchor.constraint(equalToConstant: 64).isActive = true
-      cells.append(cell)
+    for keep in [false, true] {
+      for (mode, title) in [
+        (MenuBarGlyph.Mode.on, "ON"), (.off, "OFF"), (.paused, "일시 정지"), (.problem, "오류"),
+      ] {
+        let glyph = MenuBarGlyph.image(for: mode, preservesImage: keep)
+        let image = NSImageView(image: glyph)
+        image.contentTintColor = .labelColor
+        image.alphaValue = mode == .off ? 0.65 : 1
+        image.widthAnchor.constraint(equalToConstant: glyph.size.width).isActive = true
+        image.heightAnchor.constraint(equalToConstant: 18).isActive = true
+        let cell = vertical([image, label("\(title)\(keep ? " 원본" : "")", size: 10)], spacing: 6)
+        cell.alignment = .centerX
+        cell.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        cells.append(cell)
+      }
     }
-    let strip = horizontal(cells, spacing: 16)
+    let strip = horizontal(cells, spacing: 10)
     strip.frame.origin = NSPoint(x: 10, y: 12)
     strip.setFrameSize(strip.fittingSize)
     row.addSubview(strip)
@@ -514,6 +517,45 @@ func nativeSelfTest() throws {
   try require(
     invokes == 1 && disabledAction.toolTip == nil && disabledAction.accessibilityHelp() == nil,
     "reenabled action retained disabled help")
+  for mode in MenuBarGlyph.Mode.allCases {
+    let plain = MenuBarGlyph.image(for: mode)
+    let preserved = MenuBarGlyph.image(for: mode, preservesImage: true)
+    try require(
+      preserved.isTemplate && preserved.size == NSSize(width: 32, height: 18),
+      "photo indicator missing or clipped")
+    func glyphPixels(_ image: NSImage) throws -> NSBitmapImageRep {
+      let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(image.size.width * 2), pixelsHigh: 36,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+      rep.size = image.size
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+      image.draw(in: NSRect(origin: .zero, size: image.size))
+      NSGraphicsContext.restoreGraphicsState()
+      return rep
+    }
+    let left = try glyphPixels(plain)
+    let right = try glyphPixels(preserved)
+    for y in 0..<36 {
+      for x in 0..<36 {
+        try require(
+          abs(
+            (left.colorAt(x: x, y: y)?.alphaComponent ?? 0)
+              - (right.colorAt(x: x, y: y)?.alphaComponent ?? 0)) < 0.01,
+          "photo mode shrank or changed chain")
+      }
+    }
+    var photoPixels = 0
+    for y in 0..<36 {
+      for x in 40..<64 where (right.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.1 {
+        photoPixels += 1
+      }
+    }
+    try require(
+      photoPixels > 35 && photoPixels < (24 * 36) / 2,
+      "photo outline/mountain missing or filled: \(photoPixels)")
+  }
   let activeGlyph = MenuBarGlyph.image(for: .on)
   let inactiveGlyph = MenuBarGlyph.image(for: .off)
   try require(

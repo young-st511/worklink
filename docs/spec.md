@@ -87,3 +87,7 @@ S27 구현: `ActionButton.updateTrackingAreas/mouseEntered/mouseExited/resetCurs
 S28 구현: `ActionButton.setHovered/synchronizeHover/viewWillMove/draw`, `DashboardController.compactPortRow`. root별 단일 weak hover 소유권과 content hitTest를 사용하며 상세 URL/action은 동일 24 point 행입니다. `nativeSelfTest`는 hover 소유권 이전과 상세 행 크기/복사 icon을 확인합니다.
 
 - S29 구현: `DashboardController.render`는 표시된 로컬 포트 번호 오름차순으로 서버 행을 정렬하고 같은 포트는 기존 등록 순서를 유지합니다. 설정 저장 순서와 연결 대상은 변경하지 않습니다.
+
+- S30: 원본 유지 ON이면 기존 18pt 체인 옆에 테두리·산만 있는 사진 표시를 나란히 추가합니다. OFF는 기존 체인만 사용합니다. 업무 ON/OFF·일시 정지·오류 표시와 template 색상·OFF alpha는 유지합니다. 메뉴바 폭은 표시를 잘라내지 않도록 맞추고 설정 변경 즉시 이미지·tooltip·접근성을 갱신합니다. 이미지 처리/클립보드/SSH 동작은 바꾸지 않습니다.
+
+S30 구현: `MenuBarGlyph.image/make`, `AppDelegate.applicationDidFinishLaunching/setClipboardMode/updateIcon`. 18pt 기존 체인과 상태 mark를 유지하고 원본 유지 모드만 32×18pt canvas의 사진 표시를 추가합니다. 8개 이미지를 캐시하고 variableLength status item으로 표시합니다. 모드 변경 시 즉시 갱신하며 tooltip/접근성 값에도 반영합니다.

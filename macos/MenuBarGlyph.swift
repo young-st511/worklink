@@ -3,9 +3,14 @@ import AppKit
 enum MenuBarGlyph {
   enum Mode: CaseIterable { case off, on, paused, problem }
   private static let images = Dictionary(uniqueKeysWithValues: Mode.allCases.map { ($0, make($0)) })
-  static func image(for mode: Mode) -> NSImage { images[mode]! }
-  private static func make(_ mode: Mode) -> NSImage {
-    let image = NSImage(size: NSSize(width: 18, height: 18), flipped: false) { _ in
+  private static let preservedImages = Dictionary(
+    uniqueKeysWithValues: Mode.allCases.map { ($0, make($0, preservesImage: true)) })
+  static func image(for mode: Mode, preservesImage: Bool = false) -> NSImage {
+    (preservesImage ? preservedImages : images)[mode]!
+  }
+  private static func make(_ mode: Mode, preservesImage: Bool = false) -> NSImage {
+    let image = NSImage(size: NSSize(width: preservesImage ? 32 : 18, height: 18), flipped: false) {
+      _ in
       NSGraphicsContext.saveGraphicsState()
       NSColor.black.setStroke()
       NSColor.black.setFill()
@@ -64,6 +69,21 @@ enum MenuBarGlyph {
         mark.line(to: NSPoint(x: 15, y: 6))
         mark.stroke()
         NSBezierPath(ovalIn: NSRect(x: 14.3, y: 1, width: 1.4, height: 1.4)).fill()
+      }
+      if preservesImage {
+        let frame = NSBezierPath(
+          roundedRect: NSRect(x: 20.75, y: 3.5, width: 10.5, height: 11), xRadius: 1.4, yRadius: 1.4
+        )
+        frame.lineWidth = 1.25
+        frame.stroke()
+        let mountain = NSBezierPath()
+        mountain.move(to: NSPoint(x: 22, y: 5.5))
+        mountain.line(to: NSPoint(x: 26, y: 10))
+        mountain.line(to: NSPoint(x: 30, y: 5.5))
+        mountain.lineWidth = 1.25
+        mountain.lineCapStyle = .round
+        mountain.lineJoinStyle = .round
+        mountain.stroke()
       }
       NSGraphicsContext.restoreGraphicsState()
       return true

@@ -35,7 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
-    item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     item.button?.target = self
     item.button?.action = #selector(statusClicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func setClipboardMode(_ on: Bool) {
     clipboardPreferences.preservesImage = on
     dashboard.preservesImage = on
+    updateIcon()
     if let state = bridge.state { dashboard.render(state) }
     popover.contentSize = DashboardController.panelSize
   }
@@ -231,13 +232,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       || state?.ports.contains(where: { $0.status == "conflict" }) == true
       || dashboard.notice.hasPrefix("오류")
     let mode: MenuBarGlyph.Mode = !desiredOn ? .off : suspended ? .paused : problem ? .problem : .on
-    item.button?.image = MenuBarGlyph.image(for: mode)
+    let preservesImage = clipboardPreferences.preservesImage
+    item.button?.image = MenuBarGlyph.image(for: mode, preservesImage: preservesImage)
     item.button?.alphaValue = desiredOn ? 1 : 0.65
     let status =
       suspended ? "잠금/절전 일시 정지" : !desiredOn ? "업무 OFF" : problem ? "연결 또는 전송 오류" : "업무 ON"
-    item.button?.toolTip = "Worklink · \(status) · 좌클릭 목록 / 우클릭 전환"
+    let clipboardMode = preservesImage ? "캡처 원본 유지" : "원격 경로 자동 복사"
+    item.button?.toolTip = "Worklink · \(status) · \(clipboardMode) · 좌클릭 목록 / 우클릭 전환"
     item.button?.setAccessibilityLabel("Worklink")
-    item.button?.setAccessibilityValue(status)
+    item.button?.setAccessibilityValue("\(status) · \(clipboardMode)")
     item.button?.setAccessibilityHelp("좌클릭으로 목록을 열고 우클릭으로 업무 모드를 전환합니다.")
   }
   func notice(_ text: String) {

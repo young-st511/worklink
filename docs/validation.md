@@ -177,3 +177,15 @@ check한 literal로 SSH forward를 생성하고 family 변경 시 같은 소유 
 2026-10-08 사용자 확인으로 실제 앱의 이전 호버 잔상이 해결되었음을 기록합니다. 메뉴 서버 행을 로컬 포트 번호 오름차순으로 정렬하며 같은 포트의 기존 순서는 보존합니다. 표시 시에만 정렬하고 config·SSH·연결/이미지 동작은 변경하지 않습니다. 기존 전체 native self-test로 회귀를 확인합니다.
 
 Native self-test와 diff 검사를 통과했습니다. `/Applications/Worklink.app` 설치본을 atomic 갱신하고 서명·빌드 hash를 확인했습니다. 앱은 자동 재시작하지 않았으며 로컬 Git만 사용했습니다.
+
+
+## 메뉴바 원본 유지 표시
+
+2026-10-15 원본 유지 ON에 기존 체인 옆 테두리·산 모양 사진 표시를 추가했습니다. 기존 18pt 체인은 그대로 두고 canvas만 32×18pt로 늘립니다. OFF/ON/일시 정지/오류와 원본 유지 true/false의 8개 template을 캐시합니다. status item을 variableLength로 변경해 두 표시를 담으며 설정 callback에서 즉시 image/tooltip/접근성 값을 갱신합니다. 클립보드·원본 처리·SSH 로직과 추가 polling은 없습니다.
+
+- spec-first native 테스트에서 새 API 미구현 compile 실패를 확인한 뒤 구현했습니다. 모든 mode에서 사진 표시 유무에 따른 체인 영역 2x alpha pixel 일치, 이미지 크기/template 속성, 사진 영역이 비어있지 않고 절반 미만을 채우는 선 그림인지 검사합니다. 원본 유지 전환·팝업·입력/IME·clipboard/lifecycle 등 기존 native 회귀도 확인합니다.
+- 실제 point 크기의 light/dark AppKit strip을 열어 8개 조합의 체인 크기·분리된 사진 테두리와 산·오류/일시 정지 mark 및 OFF dimming을 확인했습니다. 실제 제품 메뉴바 조작/폭 변경은 CUA 접근 거부로 검증하지 않았으며 UI 자동화로 우회하지 않았습니다.
+
+모든 native 회귀와 Go race/test/vet, 아이콘 검사, diff 검사 및 공개 소스 검수를 통과했습니다. 스펙 리뷰에서 사진 테두리 stroke가 canvas를 0.125pt 넘는 문제를 발견해 최대 x31.875pt로 안에 들도록 수정했고 재검증했습니다.
+
+두 병렬 리뷰 추가 blocker 없음. 코드 리뷰어는 별도 glyph fixture의 1x/2x/3x 체인 픽셀 보존과 8개 캐시 동일성도 확인했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·원본·원격 helper는 변경하지 않았고 제품 앱 자동 재시작과 GitHub push는 하지 않았습니다.
