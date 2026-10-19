@@ -215,3 +215,20 @@ Native 회귀·Go race/test/vet·아이콘 검사·diff 검사·공개 소스 �
 - 8개 포트와 5개 이미지의 기본3/펼침5 light/dark 실제 AppKit PNG를 생성했습니다. 기본 다크와 펼친 밝은 렌더를 열어 이미지 우선·버튼·목록 정렬과 고정 헤더/푸터를 확인했습니다. 실제 제품 마우스·팝업 재열기는 CUA 접근 거부로 미검증이며 우회하지 않았습니다.
 
 전체 native 회귀·Go race/test/vet·아이콘 검사·diff 검사·공개 소스 검수와 두 병렬 리뷰를 통과했습니다. 코드 리뷰어의 최신 소스 독립 빌드/native 검증도 통과했습니다. 이전 S23/S26의 동시 표시 기준은 S32 이미지 우선/기본3으로 명세를 동기화했습니다. `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 사용자 설정·원본·원격 helper는 변경하지 않았고 제품 앱 자동 재시작/GitHub push는 하지 않았습니다.
+
+
+## 연결 장애 시 반복 작업 줄이기
+
+2026-10-20 S33의 세 가지 범위를 구현했습니다. 호스트 재연결 backoff·네트워크 경로 이벤트·1초 클립보드 감시 정책은 이번 변경에 포함하지 않습니다.
+
+- `power_test.go`를 먼저 작성해 새 emitter/clock 미구현 compile 실패를 확인한 뒤 구현했습니다. 연결 없는 큐를 60회 검사해 jobs.json inode/수정시각과 queued 상태·원본 파일이 그대로인 것을 확인합니다. 만료는 기록에 한 번 반영하고 반복 저장하지 않으며 저장 실패 후 재시도와 OFF/이전 generation의 변경 차단을 확인합니다. 연결 불가 host 뒤의 정상 host 전송도 ACK 완료됩니다.
+- 동일 state 60회 입력이 출력1회로 줄어드는 것, reply/completion 각각2회는 그대로 출력되는 것, 작업 상태·업무 generation 변경은 새 상태로 전달되는 것, write 실패를 캐시해 다음 상태를 누락하지 않는 것을 검사합니다.
+- 가상 시계로 충돌 포트의 10/20/40/60/60초 재시도와 마감 전 차단, 정상 포트 독립성·충돌 해소 복구·성공 후 재시도 없음·OFF 차단·원격 주소 family 변경 즉시 재시도를 확인합니다. 실제 사용자 네트워크를 끊지 않았습니다.
+- 위 수치는 테스트의 작업/출력 횟수입니다. 앱 전체 전력·배터리 절감률을 실측한 결과로 해석하지 않습니다. 화면 배치 변경은 없습니다.
+
+전체 Go race/test/vet·native self-test·아이콘 검사·diff 검사를 통과했습니다. 실제 SSH 임시 fixture에서 v4→v6→v4 전환/양쪽 로컬 loopback/제목/원본 SHA/ACK 뒤 큐 삭제/원본 다운로드/업무 OFF 종료를 재검증했습니다. 별도 named pasteboard의 원본 유지·경로 복사 두 모드에서도 수동 경로/원본 복사·재업로드 없음·scratch 삭제를 통과했습니다. 운영 네트워크·설정·이미지·헬퍼를 변경하지 않았습니다.
+
+
+코드 리뷰에서 상태 중복 생략으로 로컬 클립보드의 준비됨 표시가 다음 render까지 남는 P2 회귀를 발견했습니다. named pasteboard에서 경로 복사 후 URL로 바꾸고 observeClipboard만 호출하는 테스트의 `no state heartbeat left stale ready marker` 실패를 확인했습니다. Dashboard의 준비됨 해제를 재사용 helper로 분리하고 기존 clipboard changeCount 감지에서 해제한 뒤 팝업이 보일 때만 render하도록 수정했습니다. 새 타이머나 state heartbeat는 추가하지 않았습니다. 변화 없는 클립보드에서는 표시가 유지되고 새 텍스트는 보존·재업로드하지 않는 것을 검사합니다.
+
+P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이프라인도 재검증 통과했습니다. 두 병렬 재리뷰 추가 blocker 없음이며 코드 리뷰어의 독립 native 빌드와 전체 Go race/engine race10회/vet도 통과했습니다. 공개 소스 검수 후 `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 제품 앱 자동 재시작/GitHub push는 하지 않았습니다.

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,28 @@ type Command struct {
 	PortID         string       `json:"port_id"`
 }
 
+// The output lock keeps reply/completion events intact and serializes the state cache.
+func newEventEmitter(w io.Writer) func(Event) {
+	var mu sync.Mutex
+	var previousState []byte
+	return func(event Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		data, err := json.Marshal(event)
+		if err != nil {
+			return
+		}
+		data = append(data, '\n')
+		if event.Kind == "state" && bytes.Equal(data, previousState) {
+			return
+		}
+		n, err := w.Write(data)
+		if err == nil && n == len(data) && event.Kind == "state" {
+			previousState = data
+		}
+	}
+}
+
 func ServeUI(root string, r io.Reader, w io.Writer) error {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return err
@@ -47,8 +70,7 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 	if err = os.RemoveAll(filepath.Join(root, "restores")); err != nil {
 		return err
 	}
-	var writeMu sync.Mutex
-	emit := func(event Event) { writeMu.Lock(); defer writeMu.Unlock(); json.NewEncoder(w).Encode(event) }
+	emit := newEventEmitter(w)
 	e, err := New(root, nil, emit)
 	if err != nil {
 		return err

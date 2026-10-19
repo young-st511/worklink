@@ -168,13 +168,17 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     ])
     preferredContentSize = Self.panelSize
   }
+  @discardableResult
+  func clearCopiedIfChanged(_ count: Int) -> Bool {
+    guard let copiedCount, copiedCount != count else { return false }
+    copied.removeAll()
+    self.copiedCount = nil
+    return true
+  }
   func render(_ state: CoreState) {
     loadViewIfNeeded()
     lastState = state
-    if let copiedCount, copiedCount != clipboardCount() {
-      copied.removeAll()
-      self.copiedCount = nil
-    }
+    clearCopiedIfChanged(clipboardCount())
     let scrollOffset = bodyScroll?.contentView.bounds.origin.y ?? 0
     NSLayoutConstraint.deactivate(layoutConstraints)
     view.subviews.filter { $0 !== bodyScroll }.forEach { $0.removeFromSuperview() }

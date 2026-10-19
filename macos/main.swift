@@ -258,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let count = board.changeCount
     if count == lastCount { return }
     lastCount = count
+    if dashboard.clearCopiedIfChanged(count), popover.isShown { dashboard.render(state) }
     autoreleasepool {
       do {
         guard

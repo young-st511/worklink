@@ -99,3 +99,9 @@ S31 구현: `MenuBarGlyph.make`, `AppDelegate.applicationDidFinishLaunching` 및
 - S32: 최근 이미지를 개발 서버보다 위에 표시합니다. 기본 최신 3개, 4–5개가 있으면 제목 옆 전체 N개 보기/접기로 최대 5개를 전환합니다. 상태 갱신 중 펼침을 유지하고 메뉴 재열기 시 기본 3개·맨 위로 돌아옵니다. 다수 포트에서도 기본 3개 이미지가 초기 viewport에 보이며 기존 복사/원본/재시도·입력/IME·고정 팝업/업무 제어를 유지합니다. 기록/전송 데이터는 자르지 않고 표시만 제한합니다.
 
 S32 구현: `DashboardController.render/resetScroll`. 서버 section 앞의 이미지 section은 기본3/최대5이며 제목 옆 버튼으로 전환합니다. `nativeSelfTest`는 0/1/3/4/5개, refresh 펼침 보존·접기·재열기 기본값·다수 포트에서 이미지 우선/viewport, 기존 콜백과 입력/IME를 확인합니다.
+
+- S33: 연결 없는 대기 이미지는 sending으로 바꾸거나 jobs.json을 다시 저장하지 않습니다. 30분 만료는 한 번 저장하며 연결 가능한 다른 대상 작업은 진행합니다. UI state 이벤트는 내용이 바뀐 경우에만 쓰되 command reply/completion은 생략하지 않습니다. 충돌 포트만 10/20/40/60초(상한60) 재시도하며 정상 포트/이미지는 유지하고 target 변경/새 연결은 즉시 확인합니다. OFF·세대 변경 뒤 재시도하지 않고 원본/ACK·큐/클립보드 guard를 유지합니다. 네트워크 이벤트 감지·클립보드 감시 주기·전체 배터리 정책 변경은 이번 범위가 아닙니다.
+
+S33 구현: `Engine.sendNext/cycle/failedPeer`, `peer.forwardRetries`, `newEventEmitter/ServeUI`. 전송할 연결이 있는 작업만 sending으로 바꾸고 만료 저장 실패는 queued로 복구해 재시도합니다. 상태 중복 생략은 UI 출력 단계에서만 적용하고 엔진 내부 이벤트 의미는 유지합니다. 포트별 실패 이력/선택 target/next deadline으로 충돌 재시도를 제한합니다.
+
+S33 UI 보완: 상태 heartbeat를 제거해도 로컬 클립보드 changeCount 변경 시 이미지의 준비됨 표시를 해제합니다. 추가 state/타이머를 만들지 않고 기존 감지 callback을 사용합니다.

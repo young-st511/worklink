@@ -321,6 +321,21 @@ func nativeSelfTest() throws {
   delegate.complete(delayedJob)
   try require(
     board.string(forType: .string) == delayedJob.remotePath, "in-flight copy choice ignored")
+  let readyCount = board.changeCount
+  delegate.observeClipboard()
+  try require(
+    !delegate.dashboard.copied.isEmpty && delegate.dashboard.copiedCount == readyCount,
+    "unchanged clipboard cleared ready marker")
+  board.clearContents()
+  board.setString("http://localhost:4000/", forType: .string)
+  let changedCount = board.changeCount
+  delegate.observeClipboard()
+  try require(
+    delegate.dashboard.copied.isEmpty && delegate.dashboard.copiedCount == nil,
+    "no state heartbeat left stale ready marker")
+  try require(
+    board.changeCount == changedCount && board.string(forType: .string) == "http://localhost:4000/"
+      && !delegate.captureBusy, "local clipboard marker refresh altered clipboard or uploaded text")
   board.clearContents()
   board.setData(original, forType: .png)
   delegate.lastCount = board.changeCount

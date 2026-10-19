@@ -59,14 +59,21 @@ type Event struct {
 	Error  string `json:"error,omitempty"`
 }
 type Connector func(context.Context, model.Host) (transport.Connection, error)
+type forwardRetry struct {
+	attempt int
+	next    time.Time
+	target  string
+}
+
 type peer struct {
-	mu         sync.Mutex
-	connection transport.Connection
-	forwarded  map[string]bool
-	targets    map[string]string
-	attempt    int
-	next       time.Time
-	blocked    bool
+	mu             sync.Mutex
+	connection     transport.Connection
+	forwarded      map[string]bool
+	targets        map[string]string
+	attempt        int
+	next           time.Time
+	blocked        bool
+	forwardRetries map[string]forwardRetry
 }
 
 func (p *peer) conn() transport.Connection     { p.mu.Lock(); defer p.mu.Unlock(); return p.connection }
@@ -82,6 +89,7 @@ type Engine struct {
 	cancel    context.CancelFunc
 	peers     map[string]*peer
 	wake      chan struct{}
+	now       func() time.Time
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -94,7 +102,7 @@ func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
 		return nil, err
 	}
 	s.Limits = c.Limits
-	e := &Engine{store: s, connect: connect, emit: emit, peers: map[string]*peer{}, wake: make(chan struct{}, 1), state: State{Config: c, Version: model.Version, Hosts: []HostState{}, Ports: []PortState{}, Jobs: []Job{}}}
+	e := &Engine{now: time.Now, store: s, connect: connect, emit: emit, peers: map[string]*peer{}, wake: make(chan struct{}, 1), state: State{Config: c, Version: model.Version, Hosts: []HostState{}, Ports: []PortState{}, Jobs: []Job{}}}
 	if connect == nil {
 		e.connect = transport.Connect
 	}
@@ -442,6 +450,9 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			e.failedPeer(h.Name, p, err)
 			continue
 		}
+		if p.forwardRetries == nil {
+			p.forwardRetries = map[string]forwardRetry{}
+		}
 		if p.targets == nil {
 			p.targets = map[string]string{}
 		}
@@ -486,6 +497,10 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			selected := port
 			selected.Endpoint.RemoteHost = target
 			if !p.forwarded[port.ID] {
+				retry := p.forwardRetries[port.ID]
+				if retry.target == target && e.now().Before(retry.next) {
+					continue
+				}
 				forwardCtx, done := context.WithTimeout(ctx, 5*time.Second)
 				problem := conn.Forward(forwardCtx, selected, false)
 				done()
@@ -493,9 +508,18 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 					return
 				}
 				if problem != nil {
+					retry.attempt++
+					retry.target = target
+					delay := 10 * time.Second << min(retry.attempt-1, 3)
+					if delay > time.Minute {
+						delay = time.Minute
+					}
+					retry.next = e.now().Add(delay)
+					p.forwardRetries[port.ID] = retry
 					e.portStatus(gen, port.ID, "conflict", problem.Error(), false, target)
 					continue
 				}
+				delete(p.forwardRetries, port.ID)
 				p.forwarded[port.ID] = true
 				p.targets[port.ID] = target
 			}
@@ -520,6 +544,7 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 	p.setConn(nil)
 	p.forwarded = map[string]bool{}
 	p.targets = map[string]string{}
+	p.forwardRetries = map[string]forwardRetry{}
 	p.attempt++
 	delay := time.Second << min(p.attempt-1, 6)
 	if delay > 60*time.Second {
@@ -568,33 +593,55 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 }
 func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 	e.mu.Lock()
+	if !e.state.On || e.state.Generation != gen {
+		e.mu.Unlock()
+		return
+	}
 	var j Job
-	found := false
+	var p *peer
+	var conn transport.Connection
+	selected := -1
+	var expired []int
 	for n, x := range e.state.Jobs {
-		if x.Status == "queued" && x.Generation == gen {
-			if time.Since(x.CreatedAt) > 30*time.Minute {
-				e.state.Jobs[n].Status = "expired"
-				continue
+		if x.Status != "queued" || x.Generation != gen {
+			continue
+		}
+		if time.Since(x.CreatedAt) > 30*time.Minute {
+			e.state.Jobs[n].Status = "expired"
+			expired = append(expired, n)
+			continue
+		}
+		candidate := e.peers[x.Host]
+		if candidate == nil {
+			continue
+		}
+		ready := candidate.conn()
+		if ready == nil {
+			continue
+		}
+		j, p, conn, selected = x, candidate, ready, n
+		break
+	}
+	if len(expired) > 0 {
+		if err := e.saveJobsLocked(); err != nil {
+			for _, n := range expired {
+				e.state.Jobs[n].Status = "queued"
 			}
-			j = x
-			e.state.Jobs[n].Status = "sending"
-			found = true
-			break
+			e.state.Error = err.Error()
+			e.mu.Unlock()
+			return
 		}
 	}
-	p := e.peers[j.Host]
+	if selected < 0 {
+		e.mu.Unlock()
+		return
+	}
+	e.state.Jobs[selected].Status = "sending"
 	e.mu.Unlock()
-	if !found {
-		return
-	}
-	if p == nil || p.conn() == nil {
-		e.finish(j, "queued", "", "")
-		return
-	}
 	e.publish()
 	requestCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	r, err := p.conn().Call(requestCtx, remote.Request{Op: "exists", ID: j.ID}, nil)
+	r, err := conn.Call(requestCtx, remote.Request{Op: "exists", ID: j.ID}, nil)
 	if err == nil && r.Exists {
 		if r.Image == nil || r.Image.SHA256 != j.SHA256 || r.Image.Size != j.Size {
 			err = errors.New("원격 이미지 확인 결과가 원본과 다릅니다")
@@ -604,7 +651,7 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 		var f *os.File
 		f, err = os.Open(e.queuePath(j))
 		if err == nil {
-			r, err = p.conn().Call(requestCtx, remote.Request{Op: "upload", ID: j.ID, Extension: j.Extension, SHA256: j.SHA256, Size: j.Size}, f)
+			r, err = conn.Call(requestCtx, remote.Request{Op: "upload", ID: j.ID, Extension: j.Extension, SHA256: j.SHA256, Size: j.Size}, f)
 			f.Close()
 		}
 	}
