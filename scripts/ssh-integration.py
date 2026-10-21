@@ -125,6 +125,25 @@ s.shutdown();s.server_close();thread.join()
         scratch = Path(restored["result"]["path"])
         assert scratch.read_bytes() == payload
         scratch.unlink()
+        # Explicit file batches retain original names, including Unicode, duplicate basenames and empty files.
+        file_sources = []
+        for index, data in enumerate([b"original file bytes" * 16384, b"second same basename", b""]):
+            folder = Path(root) / ("files-" + str(index));folder.mkdir()
+            source = folder / ("한글 sample.csv" if index < 2 else "empty.txt")
+            source.write_bytes(data);file_sources.append(source)
+        send("send_files", paths=[str(source) for source in file_sources])
+        uploaded = wait(lambda e: e.get("id")=="send_files", seconds=40)
+        assert not uploaded.get("error"), uploaded
+        assert len(uploaded["result"]) == 3, uploaded
+        for source, remote_file in zip(file_sources, uploaded["result"]):
+            assert remote_file["name"] == source.name and Path(remote_file["path"]).name == source.name
+            actual = command("shasum -a 256 " + shlex.quote(remote_file["path"])).split()[0]
+            assert actual == hashlib.sha256(source.read_bytes()).hexdigest()
+        assert uploaded["result"][0]["path"] != uploaded["result"][1]["path"]
+        send("copy_file_path", job_id=uploaded["result"][0]["id"])
+        copied_file = wait(lambda e: e.get("id")=="copy_file_path")
+        assert copied_file.get("result") == uploaded["result"][0]["path"], copied_file
+        print(json.dumps(dict(explicit_file_batch=True, original_file_sha256=True, unicode_name=True, duplicate_basename=True, empty_file=True, file_path_recopy=True)))
         send("toggle", on=False)
         wait(lambda e: e.get("state") and not e["state"]["on"])
         app.stdin.close();app.wait(timeout=10)

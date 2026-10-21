@@ -41,14 +41,15 @@ type PortState struct {
 	RemoteHost string `json:"remote_host,omitempty"`
 }
 type State struct {
-	On         bool         `json:"on"`
-	Generation uint64       `json:"generation"`
-	Config     model.Config `json:"config"`
-	Hosts      []HostState  `json:"hosts"`
-	Ports      []PortState  `json:"ports"`
-	Jobs       []Job        `json:"jobs"`
-	Version    string       `json:"version"`
-	Error      string       `json:"error,omitempty"`
+	On         bool           `json:"on"`
+	Generation uint64         `json:"generation"`
+	Config     model.Config   `json:"config"`
+	Hosts      []HostState    `json:"hosts"`
+	Ports      []PortState    `json:"ports"`
+	Files      []FileTransfer `json:"files,omitempty"`
+	Jobs       []Job          `json:"jobs"`
+	Version    string         `json:"version"`
+	Error      string         `json:"error,omitempty"`
 }
 type Event struct {
 	Kind   string `json:"kind"`
@@ -86,18 +87,21 @@ type portActivity struct {
 }
 
 type Engine struct {
-	mu        sync.Mutex
-	restoreMu sync.Mutex
-	store     *storage.Store
-	state     State
-	connect   Connector
-	emit      func(Event)
-	cancel    context.CancelFunc
-	peers     map[string]*peer
-	wake      chan struct{}
-	now       func() time.Time
-	activity  map[string]portActivity
-	checkedAt map[string]time.Time
+	mu          sync.Mutex
+	restoreMu   sync.Mutex
+	fileBatchMu sync.Mutex
+	fileCancel  context.CancelFunc
+	session     context.Context
+	store       *storage.Store
+	state       State
+	connect     Connector
+	emit        func(Event)
+	cancel      context.CancelFunc
+	peers       map[string]*peer
+	wake        chan struct{}
+	now         func() time.Time
+	activity    map[string]portActivity
+	checkedAt   map[string]time.Time
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -140,6 +144,9 @@ func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
 	if e.activity == nil {
 		e.activity = map[string]portActivity{}
 	}
+	if err = e.loadFiles(); err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 func (e *Engine) Snapshot() State {
@@ -150,6 +157,7 @@ func (e *Engine) Snapshot() State {
 	s.Config.Ports = append([]model.Port{}, s.Config.Ports...)
 	s.Hosts = append([]HostState{}, s.Hosts...)
 	s.Ports = append([]PortState{}, s.Ports...)
+	s.Files = append([]FileTransfer{}, s.Files...)
 	s.Jobs = append([]Job{}, s.Jobs...)
 	sort.Slice(s.Jobs, func(i, j int) bool { return s.Jobs[i].CreatedAt.After(s.Jobs[j].CreatedAt) })
 	if len(s.Jobs) > 5 {
@@ -187,6 +195,7 @@ func (e *Engine) SetOn(on bool) {
 	e.saveJobsLocked()
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
+	e.session = ctx
 	e.mu.Unlock()
 	if oldCancel != nil {
 		oldCancel()

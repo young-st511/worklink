@@ -251,3 +251,47 @@ func (s *SSH) Close() {
 	})
 }
 func (s *SSH) Address(port int) string { return net.JoinHostPort("localhost", strconv.Itoa(port)) }
+
+// UploadFile uses an independent on-demand channel, leaving health checks responsive.
+func (s *SSH) UploadFile(ctx context.Context, q remote.Request, src io.Reader) (res remote.Response, err error) {
+	args := append(options(), "-S", s.socket, "-o", "ControlMaster=no", "-o", "ProxyCommand=/usr/bin/false", "-o", "ClearAllForwardings=yes", "-T", s.host.Name, "exec "+s.host.Helper+" remote --stdio")
+	cmd := exec.CommandContext(ctx, "/usr/bin/ssh", args...)
+	var log limitedLog
+	cmd.Stderr = &log
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return res, err
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		in.Close()
+		return res, err
+	}
+	if err = cmd.Start(); err != nil {
+		in.Close()
+		out.Close()
+		return res, err
+	}
+	defer func() { in.Close(); out.Close(); cmd.Process.Kill(); cmd.Wait() }()
+	q.Version = wire.Version
+	q.Op = "upload_file"
+	if err = wire.Write(in, q); err == nil {
+		_, err = io.CopyN(in, src, q.Size)
+	}
+	if err == nil {
+		err = wire.Read(out, &res)
+	}
+	if ctx.Err() != nil {
+		return res, ctx.Err()
+	}
+	if err != nil {
+		return res, err
+	}
+	if res.Version != wire.Version {
+		return res, errors.New("원격 프로토콜 버전이 다릅니다")
+	}
+	if res.Error != "" {
+		return res, errors.New(res.Error + " (설정에서 원격 헬퍼를 다시 설치해 주세요)")
+	}
+	return res, nil
+}

@@ -18,6 +18,11 @@ enum ClipboardReader {
       throw ClipboardFailure.denied
     }
     let count = board.changeCount
+    if board.types?.contains(.fileURL) == true
+      || board.types?.contains(NSPasteboard.PasteboardType("NSFilenamesPboardType")) == true
+    {
+      return nil
+    }
     guard let offered = board.types,
       let (type, ext) = types.first(where: { offered.contains($0.0) })
     else { return nil }

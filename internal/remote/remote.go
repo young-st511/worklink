@@ -21,6 +21,7 @@ type Request struct {
 	Version   int                         `json:"version"`
 	Op        string                      `json:"op"`
 	ID        string                      `json:"id,omitempty"`
+	FileName  string                      `json:"file_name,omitempty"`
 	Extension string                      `json:"extension,omitempty"`
 	SHA256    string                      `json:"sha256,omitempty"`
 	Size      int64                       `json:"size,omitempty"`
@@ -31,6 +32,7 @@ type Request struct {
 type Response struct {
 	Version     int               `json:"version"`
 	Error       string            `json:"error,omitempty"`
+	File        *model.File       `json:"file,omitempty"`
 	Image       *model.Image      `json:"image,omitempty"`
 	Images      []model.Image     `json:"images,omitempty"`
 	Checks      map[string]bool   `json:"checks,omitempty"`
@@ -92,6 +94,22 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 			}
 		case "hello":
 			res.Root = s.Root
+		case "upload_file":
+			lease.Reset(11 * time.Minute)
+			var f model.File
+			f, err = s.ReceiveFile(q.ID, q.FileName, q.SHA256, q.Size, r)
+			if err == nil {
+				res.File = &f
+			}
+		case "file_exists":
+			var f model.File
+			f, err = s.GetFile(q.ID)
+			if errors.Is(err, os.ErrNotExist) {
+				err = nil
+			} else if err == nil {
+				res.Exists = true
+				res.File = &f
+			}
 		case "upload":
 			var i model.Image
 			i, err = s.Receive(q.ID, q.Extension, q.SHA256, q.Size, r)
@@ -195,7 +213,7 @@ func Serve(r io.Reader, w io.Writer, s *storage.Store) error {
 			}
 		}
 		// A rejected upload may leave unread payload. Never reuse its stream.
-		if q.Op == "upload" && err != nil {
+		if (q.Op == "upload" || q.Op == "upload_file") && err != nil {
 			return err
 		}
 	}

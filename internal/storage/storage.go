@@ -29,7 +29,7 @@ func DefaultRoot() string {
 	return filepath.Join(h, ".local", "share", "worklink")
 }
 func Open(root string, limits model.Limits) (*Store, error) {
-	for _, d := range []string{root, filepath.Join(root, "inbox"), filepath.Join(root, "records"), filepath.Join(root, "queue"), filepath.Join(root, "staging")} {
+	for _, d := range []string{root, filepath.Join(root, "inbox"), filepath.Join(root, "records"), filepath.Join(root, "queue"), filepath.Join(root, "staging"), filepath.Join(root, "file-inbox"), filepath.Join(root, "file-records")} {
 		if e := os.MkdirAll(d, 0700); e != nil {
 			return nil, e
 		}
@@ -197,13 +197,9 @@ func (s *Store) Receive(id, ext, hash string, size int64, r io.Reader) (model.Im
 	if !errors.Is(exists, os.ErrNotExist) {
 		return model.Image{}, exists
 	}
-	all, e := s.List()
+	total, e := s.managedBytes()
 	if e != nil {
 		return model.Image{}, e
-	}
-	var total int64
-	for _, i := range all {
-		total += i.Size
 	}
 	if total+size > s.Limits.InboxBytes {
 		return model.Image{}, errors.New("원격 보관 용량이 가득 찼습니다. 정리 또는 용량 설정을 확인해 주세요")
@@ -301,6 +297,11 @@ func (s *Store) Cleanup(now time.Time, dry bool) ([]string, error) {
 			}
 		}
 		out = append(out, i.Path)
+	}
+	files, err := s.cleanupFiles(now, dry)
+	out = append(out, files...)
+	if err != nil {
+		return out, err
 	}
 	if !dry {
 		e = AtomicJSON(filepath.Join(s.Root, "cleanup.json"), map[string]any{"last_success": now.UTC()})

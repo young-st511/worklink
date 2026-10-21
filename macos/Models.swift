@@ -93,7 +93,17 @@ struct ImageJob: Codable {
   var clipboardCount: Int?
   var generation: UInt64?
 }
+struct FileTransfer: Codable {
+  var id: String
+  var name: String
+  var host: String
+  var size: Int64
+  var sent: Int64
+  var status: String
+  var error: String?
+}
 struct CoreState: Codable {
+  var files: [FileTransfer]? = nil
   var on: Bool
   var generation: UInt64
   var config: Config

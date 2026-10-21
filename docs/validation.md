@@ -232,3 +232,14 @@ Native 회귀·Go race/test/vet·아이콘 검사·diff 검사·공개 소스 �
 코드 리뷰에서 상태 중복 생략으로 로컬 클립보드의 준비됨 표시가 다음 render까지 남는 P2 회귀를 발견했습니다. named pasteboard에서 경로 복사 후 URL로 바꾸고 observeClipboard만 호출하는 테스트의 `no state heartbeat left stale ready marker` 실패를 확인했습니다. Dashboard의 준비됨 해제를 재사용 helper로 분리하고 기존 clipboard changeCount 감지에서 해제한 뒤 팝업이 보일 때만 render하도록 수정했습니다. 새 타이머나 state heartbeat는 추가하지 않았습니다. 변화 없는 클립보드에서는 표시가 유지되고 새 텍스트는 보존·재업로드하지 않는 것을 검사합니다.
 
 P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이프라인도 재검증 통과했습니다. 두 병렬 재리뷰 추가 blocker 없음이며 코드 리뷰어의 독립 native 빌드와 전체 Go race/engine race10회/vet도 통과했습니다. 공개 소스 검수 후 `/Applications/Worklink.app`을 atomic 교체하고 서명·빌드 hash를 확인했습니다. 제품 앱 자동 재시작/GitHub push는 하지 않았습니다.
+
+## 2026-10-21: 파일 전송과 포트 자동 교체
+
+- S34: 명세 기반 실패 테스트 후 구현. 두 독립 리뷰에서 endpoint 변경 시 과거 비활성 기간 재사용, 저장 실패 뒤 활성 항목 오판 가능성을 찾아 수정했습니다. Host/Endpoint identity 검증·freshness 무효화와 재시작/SSH 단절/stale/세대/저장 실패 회귀를 포함합니다.
+- S35: 명세 기반 storage/engine 실패 테스트 후 구현. SHA/빈 파일/한글 및 중복 이름/합산 quota/24시간 정리/취소·OFF/기록 실패 회귀를 포함합니다. 느린 파일 스트림 중 image Receive가 별도로 완료되는 동시성 테스트로 장시간 저장 잠금을 방지합니다. 전송 중 임시 파일과 rename-record 사이 비정상 종료 잔여물은 전용 staging 이름 또는 영속 pending 소유권 기록·일치하는 경로/이름/크기/해시·24시간 조건으로 정리하고 사용자 원본/알 수 없는 파일은 보존합니다.
+- 실제 SSH 임시 디렉터리에서 일반 파일 batch 3개(한글·같은 basename·빈 파일)의 원본 SHA256/이름/별도 저장경로/경로 재복사를 확인했습니다. 기존 캡처 SHA/ACK/로컬 임시본 삭제/원본 다운로드·복사/원본 유지 양쪽 모드와 v4→v6→v4 tunnel 전환도 통과했습니다. 실제 사용자 파일은 사용하지 않았습니다.
+- AppKit named pasteboard에서 file URL·legacy Finder 파일 목록 추출, Finder thumbnail 자동 캡처 제외, Services selector·드롭 타입 등록, 최근 파일 3→8개/경로 버튼을 검증했습니다. Light/dark 실제 AppKit offscreen 렌더를 확인했습니다. 기존 clipboard/lifecycle/appearance/hover/quick registration/editor/IME 테스트를 유지합니다.
+- 실제 Finder 서비스 메뉴 노출·마우스 드래그·설치 앱 클릭 검증은 수행하지 않았습니다. 기존 Computer Use 접근 거부를 우회하지 않았으며, offscreen fixture/실제 SSH 검증과 구분합니다. 설치 앱 자동 재시작도 수행하지 않습니다.
+- Apple 공식 API 근거: [Services Properties](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/properties.html)의 NSServices/NSMessage/NSSendFileTypes/NSRequiredContext 및 [NSDraggingDestination](https://developer.apple.com/documentation/appkit/nsdraggingdestination), [NSOpenPanel](https://developer.apple.com/documentation/appkit/nsopenpanel). 별도 Finder 확장 프로세스나 상주 polling을 추가하지 않습니다.
+- 최종 `go test -race ./...`, `go vet ./...`, native self-test, 앱 서명/plist/아이콘 검사가 통과했습니다. 두 리뷰에서 지적된 연결 snapshot·기록 실패·느린 전송 잠금·히스토리 접근·소유권 정리 문제를 수정 후 재검증했습니다.
+- 설치본 `/Applications/Worklink.app`를 원자적으로 교체하고 서명 및 주요 실행파일/리소스 SHA256을 검증했습니다. 선택된 원격 대상의 헬퍼를 갱신해 배포 바이너리 SHA256과 일일 정리 등록 성공을 확인했습니다. 제품 앱은 자동 재시작하지 않았습니다.

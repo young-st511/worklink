@@ -39,10 +39,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item.button?.target = self
     item.button?.action = #selector(statusClicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    if let button = item.button {
+      let drop = StatusFileDropView(frame: button.bounds)
+      drop.autoresizingMask = [.width, .height]
+      drop.receive = { [weak self] urls in self?.sendFiles(urls) ?? false }
+      drop.clicked = { [weak self] in self?.statusClicked() }
+      button.addSubview(drop)
+    }
+    NSApp.servicesProvider = self
+    NSUpdateDynamicServices()
     popover.contentViewController = dashboard
     popover.contentSize = DashboardController.panelSize
     popover.behavior = .transient
     dashboard.clipboardCount = { [weak self] in self?.clipboardBoard.changeCount ?? 0 }
+    dashboard.sendFiles = { [weak self] in self?.chooseFiles() }
+    dashboard.copyFile = { [weak self] f in self?.copyFile(f) }
+    dashboard.cancelFiles = { [weak self] in self?.bridge.send("cancel_files") }
     dashboard.toggle = { [weak self] in self?.toggle() }
     dashboard.settings = { [weak self] in self?.showSettings() }
     dashboard.quit = { NSApp.terminate(nil) }

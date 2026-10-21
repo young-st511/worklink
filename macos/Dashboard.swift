@@ -29,14 +29,20 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   var headerFrame: NSRect { pinnedHeader?.frame ?? .zero }
   var footerFrame: NSRect { pinnedFooter?.frame ?? .zero }
   func resetScroll() {
-    if showsAllImages {
+    if showsAllImages || showsAllFiles {
       showsAllImages = false
+      showsAllFiles = false
       if let lastState { render(lastState) }
     }
     bodyScroll?.contentView.scroll(to: .zero)
     if let bodyScroll { bodyScroll.reflectScrolledClipView(bodyScroll.contentView) }
   }
 
+  var showsAllFiles = false
+  func refreshFileLayout() { if let lastState { render(lastState) } }
+  var sendFiles: (() -> Void)?
+  var cancelFiles: (() -> Void)?
+  var copyFile: ((FileTransfer) -> Void)?
   var toggle: (() -> Void)?
   var settings: (() -> Void)?
   var quit: (() -> Void)?
@@ -342,6 +348,7 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
       sections.append(row)
     }
     sections.append(separator())
+    sections += fileSections(state)
     let manage = ActionButton("관리…") { [weak self] in self?.settings?() }
     manage.isBordered = false
     manage.font = .systemFont(ofSize: 10)

@@ -51,7 +51,7 @@ func renderPreviews(_ directory: URL) throws {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   for style in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = NSAppearance(named: style)!
-    for name in ["off", "on", "error", "keep", "images"] {
+    for name in ["off", "on", "error", "keep", "images", "files"] {
       let controller = DashboardController()
       controller.view.appearance = appearance
       var state = fixtureState(on: name != "off")
@@ -66,6 +66,16 @@ func renderPreviews(_ directory: URL) throws {
         controller.preservesImage = name == "keep"
         state.config.ports = []
         state.jobs = Array(repeating: state.jobs[0], count: 5)
+      }
+      if name == "files" {
+        state.files = [
+          FileTransfer(
+            id: identifier(), name: "디자인 원본 시안.pdf", host: state.config.imageHost, size: 204800,
+            sent: 204800, status: "complete", error: nil),
+          FileTransfer(
+            id: identifier(), name: "테스트 데이터.csv", host: state.config.imageHost, size: 1_024_000,
+            sent: 512000, status: "sending", error: nil),
+        ]
       }
       if let port = state.config.ports.first { controller.expanded.insert(port.id) }
       appearance.performAsCurrentDrawingAppearance { controller.render(state) }
@@ -228,6 +238,8 @@ func renderPreviews(_ directory: URL) throws {
   print("Rendered actual AppKit dashboard views and settings to \(directory.path)")
 }
 func nativeSelfTest() throws {
+  try nativeFileSelfTest()
+
   func require(_ condition: Bool, _ message: String) throws {
     if !condition {
       throw NSError(domain: "Worklink QA", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
@@ -1118,5 +1130,65 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
   Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { _ in
     fputs("Native QA timed out\n", stderr)
     NSApp.terminate(nil)
+  }
+}
+
+func nativeFileSelfTest() throws {
+  func check(_ good: Bool, _ message: String) throws {
+    if !good {
+      throw NSError(domain: "File QA", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+  }
+  let board = NSPasteboard.withUniqueName()
+  defer { board.releaseGlobally() }
+  let urls = [
+    URL(fileURLWithPath: "/tmp/Worklink fixture.txt"), URL(fileURLWithPath: "/tmp/한글.csv"),
+  ]
+  board.writeObjects(urls as [NSURL])
+  try check(FileSelection.urls(board) == urls, "file URL selection lost filename")
+  board.setData(Data([1, 2, 3]), forType: .png)
+  let image = try ClipboardReader.read(board, maximum: 1024)
+  try check(image == nil, "Finder thumbnail uploaded automatically")
+  board.clearContents()
+  board.setPropertyList(
+    urls.map { $0.path }, forType: NSPasteboard.PasteboardType("NSFilenamesPboardType"))
+  try check(FileSelection.urls(board) == urls, "legacy Finder selection lost filename")
+  let delegate = AppDelegate()
+  try check(
+    delegate.responds(to: NSSelectorFromString("sendFiles:userData:error:")),
+    "Finder service selector missing")
+  let drop = StatusFileDropView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+  try check(
+    drop.registeredDraggedTypes.contains(.fileURL), "menu drop file URL registration missing")
+  let controller = DashboardController()
+  var state = fixtureState()
+  state.files = (0..<8).map {
+    FileTransfer(
+      id: String($0), name: "fixture-\($0).pdf", host: state.config.imageHost, size: 2048,
+      sent: 2048, status: "complete", error: nil)
+  }
+  var copied = ""
+  controller.copyFile = { copied = $0.id }
+  controller.render(state)
+  let rows = controller.view.allFileRows()
+  try check(
+    rows.count == 3 && rows.allSatisfy { $0.frame.height == 28 || $0.frame.height == 0 },
+    "recent file compact rows")
+  controller.showsAllFiles = true
+  controller.render(state)
+  try check(controller.view.allFileRows().count == 8, "file history expansion lost batch entries")
+  func buttons(_ view: NSView) -> [ActionButton] {
+    (view as? ActionButton).map { [$0] } ?? view.subviews.flatMap { buttons($0) }
+  }
+  if let button = buttons(controller.view).first(where: { $0.title == "파일 경로 복사" }) {
+    button.performClick(nil)
+  }
+  try check(!copied.isEmpty, "file path action unavailable")
+}
+extension NSView {
+  fileprivate func allFileRows() -> [NSView] {
+    subviews.flatMap { child in
+      child.identifier?.rawValue.hasPrefix("file-row-") == true ? [child] : child.allFileRows()
+    }
   }
 }

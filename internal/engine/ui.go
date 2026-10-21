@@ -24,6 +24,7 @@ type Command struct {
 	On             bool         `json:"on"`
 	Config         model.Config `json:"config"`
 	Input          string       `json:"input"`
+	Paths          []string     `json:"paths"`
 	Path           string       `json:"path"`
 	Extension      string       `json:"extension"`
 	ClipboardCount int          `json:"clipboard_count"`
@@ -95,6 +96,12 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			}
 		case "parse":
 			event.Result = address.Parse(c.Input)
+		case "send_files":
+			event.Result, problem = e.SendFiles(c.Paths)
+		case "cancel_files":
+			e.CancelFiles()
+		case "copy_file_path":
+			event.Result, problem = e.CopyFilePath(c.JobID)
 		case "upload":
 			var j Job
 			j, problem = e.Enqueue(c.Path, c.Extension, c.ClipboardCount)
@@ -135,7 +142,7 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			emit(Event{Kind: "reply", Error: err.Error()})
 			continue
 		}
-		if c.Method == "restore_original" || c.Method == "copy_path" || c.Method == "title" || c.Method == "install_remote" {
+		if c.Method == "send_files" || c.Method == "copy_file_path" || c.Method == "restore_original" || c.Method == "copy_path" || c.Method == "title" || c.Method == "install_remote" {
 			go handle(c)
 		} else {
 			handle(c)
