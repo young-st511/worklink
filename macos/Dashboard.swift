@@ -43,6 +43,8 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   var sendFiles: (() -> Void)?
   var cancelFiles: (() -> Void)?
   var copyFile: ((FileTransfer) -> Void)?
+  var undoPortCleanup: (() -> Void)?
+  var pinPort: ((PortConfig) -> Void)?
   var toggle: (() -> Void)?
   var settings: (() -> Void)?
   var quit: (() -> Void)?
@@ -362,6 +364,19 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     serverHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
     serverHeading.heightAnchor.constraint(equalToConstant: 18).isActive = true
     sections.append(serverHeading)
+    if let history = state.config.portCleanupHistory, !history.removed.isEmpty {
+      let info = label("자동 정리 \(history.removed.count)개", size: 10, color: .secondaryLabelColor)
+      info.toolTip =
+        "최근 정리: \(portCleanupDate(history.removedAt))\n"
+        + history.removed.map { "\($0.host) · \($0.localPort)" }.joined(separator: "\n")
+      let undo = ActionButton("되돌리기") { [weak self] in self?.undoPortCleanup?() }
+      undo.font = .systemFont(ofSize: 10)
+      undo.toolTip = "정리한 포트를 복원하고 고정합니다. 충돌이나 상한 초과 시 기존 설정을 유지합니다."
+      let row = horizontal([info, NSView(), undo])
+      row.distribution = .fill
+      row.widthAnchor.constraint(equalToConstant: 344).isActive = true
+      sections.append(row)
+    }
     sections.append(quickForm)
     if state.config.ports.isEmpty {
       sections.append(label("등록한 서버가 없습니다. URL이나 포트 번호를 붙여넣어 추가하세요.", color: .secondaryLabelColor))
@@ -546,10 +561,24 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     let detailActions = horizontal([urlLabel, copyAddress, titleButton], spacing: 6)
     detailActions.identifier = NSUserInterfaceItemIdentifier("port-detail-actions-\(port.id)")
     detailActions.heightAnchor.constraint(equalToConstant: 24).isActive = true
-    var rows: [NSView] = [
-      primary, detailActions,
-      label("원격 \(port.host) / \(actualAddress)", size: 10, color: .secondaryLabelColor),
-    ]
+    let remoteInfo = label(
+      "원격 \(port.host) / \(actualAddress)", size: 10, color: .secondaryLabelColor)
+    remoteInfo.maximumNumberOfLines = 1
+    remoteInfo.lineBreakMode = .byTruncatingMiddle
+    remoteInfo.widthAnchor.constraint(equalToConstant: 306).isActive = true
+    remoteInfo.toolTip = remoteInfo.stringValue
+    let pin = ActionButton(port.pinned == true ? "고정 해제" : "자동 정리에서 보호") { [weak self] in
+      self?.pinPort?(port)
+    }
+    pin.image = NSImage(
+      systemSymbolName: port.pinned == true ? "pin.fill" : "pin",
+      accessibilityDescription: pin.title)
+    pin.imagePosition = .imageOnly
+    pin.toolTip = pin.title
+    pin.setAccessibilityLabel(pin.title)
+    pin.widthAnchor.constraint(equalToConstant: 28).isActive = true
+    pin.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    var rows: [NSView] = [primary, detailActions, horizontal([remoteInfo, pin], spacing: 6)]
     if let error = connection?.error, !error.isEmpty {
       rows.append(label(error, size: 10, color: .systemRed))
     }

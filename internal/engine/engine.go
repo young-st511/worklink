@@ -81,27 +81,32 @@ func (p *peer) conn() transport.Connection     { p.mu.Lock(); defer p.mu.Unlock(
 func (p *peer) setConn(c transport.Connection) { p.mu.Lock(); defer p.mu.Unlock(); p.connection = c }
 
 type portActivity struct {
+	FirstSeen     time.Time `json:"first_seen"`
+	LastActive    time.Time `json:"last_active"`
 	Identity      string    `json:"identity"`
 	Reachable     bool      `json:"reachable"`
 	InactiveSince time.Time `json:"inactive_since"`
 }
 
 type Engine struct {
-	mu          sync.Mutex
-	restoreMu   sync.Mutex
-	fileBatchMu sync.Mutex
-	fileCancel  context.CancelFunc
-	session     context.Context
-	store       *storage.Store
-	state       State
-	connect     Connector
-	emit        func(Event)
-	cancel      context.CancelFunc
-	peers       map[string]*peer
-	wake        chan struct{}
-	now         func() time.Time
-	activity    map[string]portActivity
-	checkedAt   map[string]time.Time
+	configMu         sync.Mutex
+	mu               sync.Mutex
+	restoreMu        sync.Mutex
+	fileBatchMu      sync.Mutex
+	fileCancel       context.CancelFunc
+	session          context.Context
+	store            *storage.Store
+	state            State
+	connect          Connector
+	emit             func(Event)
+	cancel           context.CancelFunc
+	peers            map[string]*peer
+	wake             chan struct{}
+	now              func() time.Time
+	activity         map[string]portActivity
+	activityDirty    bool
+	checkedAt        map[string]time.Time
+	portCleanupRetry time.Time
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -153,6 +158,11 @@ func (e *Engine) Snapshot() State {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s := e.state
+	if h := s.Config.PortCleanupHistory; h != nil {
+		copy := *h
+		copy.Removed = append([]model.Port{}, h.Removed...)
+		s.Config.PortCleanupHistory = &copy
+	}
 	s.Config.Hosts = append([]model.Host{}, s.Config.Hosts...)
 	s.Config.Ports = append([]model.Port{}, s.Config.Ports...)
 	s.Hosts = append([]HostState{}, s.Hosts...)
@@ -217,6 +227,11 @@ func (e *Engine) SetOn(on bool) {
 }
 func (e *Engine) SaveConfig(c model.Config) error { _, err := e.saveConfig(c); return err }
 func (e *Engine) saveConfig(c model.Config) (*model.Port, error) {
+	e.configMu.Lock()
+	defer e.configMu.Unlock()
+	e.mu.Lock()
+	c.PortCleanupHistory = e.state.Config.PortCleanupHistory
+	e.mu.Unlock()
 	c, removed, err := e.trimInactive(c)
 	if err != nil {
 		return nil, err
@@ -564,6 +579,14 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			}
 			e.portStatus(gen, port.ID, status, r.CheckErrors[port.ID], ready, target)
 		}
+	}
+	if err := e.cleanupPorts(ctx, gen); err != nil {
+		e.mu.Lock()
+		if e.state.On && e.state.Generation == gen {
+			e.state.Error = "포트 자동 정리: " + err.Error()
+			e.portCleanupRetry = e.now().Add(time.Minute)
+		}
+		e.mu.Unlock()
 	}
 	if e.current(gen) {
 		e.sendNext(ctx, gen)

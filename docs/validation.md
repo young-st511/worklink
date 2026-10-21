@@ -243,3 +243,12 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 - Apple 공식 API 근거: [Services Properties](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/SysServices/Articles/properties.html)의 NSServices/NSMessage/NSSendFileTypes/NSRequiredContext 및 [NSDraggingDestination](https://developer.apple.com/documentation/appkit/nsdraggingdestination), [NSOpenPanel](https://developer.apple.com/documentation/appkit/nsopenpanel). 별도 Finder 확장 프로세스나 상주 polling을 추가하지 않습니다.
 - 최종 `go test -race ./...`, `go vet ./...`, native self-test, 앱 서명/plist/아이콘 검사가 통과했습니다. 두 리뷰에서 지적된 연결 snapshot·기록 실패·느린 전송 잠금·히스토리 접근·소유권 정리 문제를 수정 후 재검증했습니다.
 - 설치본 `/Applications/Worklink.app`를 원자적으로 교체하고 서명 및 주요 실행파일/리소스 SHA256을 검증했습니다. 선택된 원격 대상의 헬퍼를 갱신해 배포 바이너리 SHA256과 일일 정리 등록 성공을 확인했습니다. 제품 앱은 자동 재시작하지 않았습니다.
+
+## 2026-10-22: N일 미사용 포트 일일 정리 (S36)
+
+- 기본 OFF·7일/3·7·14·30일 선택, 최초 관측·마지막 활성 시각, 고정/중지/세대/단절/15초 freshness 보호,24시간 gate, 설정과 정리 이력의 원자 CAS 저장 및 전체 Undo 충돌 검증을 fake-clock 테스트로 확인했습니다. 정책 변경과 해당 forward 해제가 업무 세대·다른 SSH·파일 취소를 건드리지 않는 회귀를 포함합니다.
+- 활동 기록은 지속 활성 체크마다 메모리 시각만 갱신하고 디스크는 상태 전환/미저장 복구 때만 씁니다. 최신 활성 관측 저장이 실패하면 메모리에 유지하고 저장 복구 전까지 정리·상한 교체를 차단합니다. 정리 오류는 현재 세대에서만 표시하고 기존 cycle에서 최소1분 뒤 재시도합니다. 추가 타이머·리스너 탐색·주기적 연결은 없습니다.
+- 두 독립 리뷰에서 빈 이력의 Swift decoding, 느린 forward 해제 후 freshness 만료, 저장 실패 뒤 최근 활성 관측 유실, 이전 세대 오류 반영을 확인하고 수정했습니다. null/missing/[] CoreState·정책 기본값/기간·최근 실행·Undo/pin native fixture와 지연 forward/저장 실패 회귀를 추가했습니다.
+- `go test -race ./...`, `go vet ./...`, native self-test와 밝은/어두운 cleanup popup AppKit offscreen 렌더를 검증했습니다. 기존 입력/cursor/IME·원본 클립보드·고정 팝업 회귀를 유지합니다. 실제 제품 마우스 조작은 수행하지 않았고 기존 CUA 거부를 우회하지 않았습니다.
+- 최종 빌드로 실제 SSH 임시 fixture에서 기존 파일 batch(한글/동일 basename/빈 파일/원본 SHA/경로 재복사), 캡처 원본/ACK/원본 복사 양쪽 모드, v4→v6→v4 tunnel/title/OFF 회귀를 통과했습니다. 일일 정리 날짜·저장 실패·forward 경계 자체는 fake-clock/connection 테스트이며 실제 사용자 등록을 삭제하는 실험은 하지 않았습니다.
+- `/Applications/Worklink.app`를 원자적으로 교체하고 앱 서명·주요 실행파일/리소스 SHA256을 검증했습니다. 기존 설정의 정책은 OFF로 유지하며 제품 앱은 자동 재시작하지 않았습니다.

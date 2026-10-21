@@ -51,7 +51,7 @@ func renderPreviews(_ directory: URL) throws {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   for style in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = NSAppearance(named: style)!
-    for name in ["off", "on", "error", "keep", "images", "files"] {
+    for name in ["off", "on", "error", "keep", "images", "files", "cleanup"] {
       let controller = DashboardController()
       controller.view.appearance = appearance
       var state = fixtureState(on: name != "off")
@@ -66,6 +66,16 @@ func renderPreviews(_ directory: URL) throws {
         controller.preservesImage = name == "keep"
         state.config.ports = []
         state.jobs = Array(repeating: state.jobs[0], count: 5)
+      }
+      if name == "cleanup" {
+        state.config.portCleanupEnabled = true
+        state.config.portCleanupDays = 7
+        var removed = state.config.ports[0]
+        removed.id = identifier()
+        removed.localPort = 4100
+        state.config.portCleanupHistory = PortCleanupHistory(
+          lastRun: "2026-10-22T01:00:00Z", removedAt: "2026-10-22T01:00:00Z", removed: [removed])
+        state.config.ports[0].pinned = true
       }
       if name == "files" {
         state.files = [
@@ -239,6 +249,7 @@ func renderPreviews(_ directory: URL) throws {
 }
 func nativeSelfTest() throws {
   try nativeFileSelfTest()
+  try nativeCleanupSelfTest()
 
   func require(_ condition: Bool, _ message: String) throws {
     if !condition {
@@ -1191,4 +1202,64 @@ extension NSView {
       child.identifier?.rawValue.hasPrefix("file-row-") == true ? [child] : child.allFileRows()
     }
   }
+}
+
+func nativeCleanupSelfTest() throws {
+  func check(_ condition: Bool, _ message: String) throws {
+    if !condition {
+      throw NSError(domain: "Cleanup QA", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+  }
+  var state = fixtureState()
+  var object = jsonObject(state)
+  var config = object["config"] as! [String: Any]
+  config["port_cleanup_history"] = [
+    "last_run": "2026-10-22T01:00:00Z", "removed_at": "0001-01-01T00:00:00Z", "removed": NSNull(),
+  ]
+  object["config"] = config
+  let decoded = try decoder().decode(
+    CoreState.self, from: JSONSerialization.data(withJSONObject: object))
+  try check(
+    decoded.config.portCleanupHistory?.removed.isEmpty == true,
+    "null history blocked CoreState decoding")
+  var history = config["port_cleanup_history"] as! [String: Any]
+  history.removeValue(forKey: "removed")
+  config["port_cleanup_history"] = history
+  object["config"] = config
+  _ = try decoder().decode(CoreState.self, from: JSONSerialization.data(withJSONObject: object))
+  let bridge = CoreBridge()
+  bridge.state = state
+  let settings = SettingsController(bridge: bridge, loginEnabled: false)
+  try check(
+    settings.cleanupEnabled.state == .off && settings.cleanupDays.titleOfSelectedItem == "7일"
+      && !settings.cleanupDays.isEnabled, "cleanup default not off/7 days")
+  state.config.portCleanupEnabled = true
+  state.config.portCleanupDays = 30
+  state.config.revision += 1
+  state.config.ports[0].pinned = true
+  state.config.portCleanupHistory = PortCleanupHistory(
+    lastRun: "2026-10-22T01:00:00Z", removedAt: "2026-10-22T01:00:00Z",
+    removed: [state.config.ports[1]])
+  bridge.state = state
+  settings.refresh()
+  try check(
+    settings.cleanupDays.isEnabled && settings.cleanupDays.titleOfSelectedItem == "30일",
+    "policy refresh lost period")
+  try check(!settings.cleanupLastRun.stringValue.contains("아직"), "last cleanup time missing")
+  let controller = DashboardController()
+  var undo = false
+  var pinned = false
+  controller.undoPortCleanup = { undo = true }
+  controller.pinPort = { _ in pinned = true }
+  controller.expanded.insert(state.config.ports[0].id)
+  controller.render(state)
+  func buttons(_ view: NSView) -> [ActionButton] {
+    (view as? ActionButton).map { [$0] } ?? view.subviews.flatMap { buttons($0) }
+  }
+  buttons(controller.view).first { $0.title == "되돌리기" }?.performClick(nil)
+  buttons(controller.view).first { $0.title == "고정 해제" }?.performClick(nil)
+  try check(undo && pinned, "undo/pin callback missing")
+  try check(
+    controller.view.frame.size == DashboardController.panelSize, "cleanup changed popup dimensions")
+  settings.close()
 }

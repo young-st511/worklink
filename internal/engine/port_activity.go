@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/young-st511/worklink/internal/model"
@@ -17,10 +18,6 @@ func (e *Engine) recordPortChecks(host string, checks map[string]bool, gen uint6
 	if !e.state.On || e.state.Generation != gen {
 		return
 	}
-	previousActivity := make(map[string]portActivity, len(e.activity))
-	for id, value := range e.activity {
-		previousActivity[id] = value
-	}
 	changed := false
 	for _, port := range e.state.Config.Ports {
 		ready, ok := checks[port.ID]
@@ -29,22 +26,49 @@ func (e *Engine) recordPortChecks(host string, checks map[string]bool, gen uint6
 		}
 		e.checkedAt[port.ID] = e.now()
 		previous, exists := e.activity[port.ID]
-		if exists && previous.Identity == portIdentity(port) && previous.Reachable == ready {
+		same := exists && previous.Identity == portIdentity(port)
+		if same && !previous.FirstSeen.IsZero() && previous.Reachable == ready {
+			if ready {
+				previous.LastActive = e.now().UTC()
+				e.activity[port.ID] = previous
+			}
 			continue
 		}
-		current := portActivity{Identity: portIdentity(port), Reachable: ready}
-		if !ready {
-			current.InactiveSince = e.now().UTC()
+		current := portActivity{Identity: portIdentity(port), FirstSeen: e.now().UTC()}
+		if same {
+			current = previous
+			if current.FirstSeen.IsZero() {
+				current.FirstSeen = e.now().UTC()
+			}
+		}
+		current.Reachable = ready
+		if ready {
+			current.LastActive = e.now().UTC()
+			current.InactiveSince = time.Time{}
+		} else {
+			if !same || previous.Reachable || current.InactiveSince.IsZero() {
+				current.InactiveSince = e.now().UTC()
+			}
+			// A persisted reachable record may predate a crash. Start a conservative inactivity window now.
+			if same && previous.Reachable {
+				current.LastActive = e.now().UTC()
+			}
 		}
 		e.activity[port.ID] = current
 		changed = true
 	}
-	if changed {
+	if changed || e.activityDirty {
 		if err := storage.AtomicJSON(filepath.Join(e.store.Root, "port-activity.json"), e.activity); err != nil {
-			e.state.Error = err.Error()
-			e.activity = previousActivity
+			e.state.Error = "포트 활동 기록: " + err.Error()
+			e.activityDirty = true
 			e.checkedAt = map[string]time.Time{}
+		} else {
+			e.activityDirty = false
+			if strings.HasPrefix(e.state.Error, "포트 활동 기록: ") {
+				e.state.Error = ""
+			}
 		}
+
 	}
 }
 func (e *Engine) trimInactive(c model.Config) (model.Config, *model.Port, error) {
@@ -68,9 +92,15 @@ func (e *Engine) trimInactive(c model.Config) (model.Config, *model.Port, error)
 			return c, nil, errors.New("기존 포트 수정과 자동 교체를 동시에 할 수 없습니다")
 		}
 	}
+	if e.activityDirty {
+		return c, nil, errors.New("활동 기록 저장을 확인한 후 다시 등록해 주세요")
+	}
 	candidate := -1
 	var oldest time.Time
 	for n, port := range e.state.Config.Ports {
+		if port.Pinned || !port.Enabled {
+			continue
+		}
 		a, ok := e.activity[port.ID]
 		if !ok || a.Identity != portIdentity(port) || a.Reachable || a.InactiveSince.IsZero() {
 			continue
@@ -94,7 +124,7 @@ func (e *Engine) trimInactive(c model.Config) (model.Config, *model.Port, error)
 		}
 	}
 	if candidate < 0 {
-		return c, nil, errors.New("서버 16개가 모두 활성 또는 미확인 상태입니다. 업무 ON에서 비활성 상태를 확인하거나 항목을 직접 제거해 주세요")
+		return c, nil, errors.New("서버 16개가 모두 활성·고정·중지 또는 미확인 상태입니다. 업무 ON에서 비활성 상태를 확인하거나 항목을 직접 제거해 주세요")
 	}
 	removed := e.state.Config.Ports[candidate]
 	ports := make([]model.Port, 0, 16)
@@ -125,10 +155,17 @@ func (e *Engine) prunePortActivityLocked(previous, c model.Config) {
 			changed = true
 		}
 	}
-	if changed {
+	if changed || e.activityDirty {
 		if err := storage.AtomicJSON(filepath.Join(e.store.Root, "port-activity.json"), e.activity); err != nil {
-			e.state.Error = err.Error()
+			e.state.Error = "포트 활동 기록: " + err.Error()
+			e.activityDirty = true
+		} else {
+			e.activityDirty = false
+			if strings.HasPrefix(e.state.Error, "포트 활동 기록: ") {
+				e.state.Error = ""
+			}
 		}
+
 	}
 }
 

@@ -13,6 +13,9 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
   let hostPicker = NSPopUpButton()
   let imagePicker = NSPopUpButton()
   let choices = NSPopUpButton()
+  let cleanupEnabled = NSButton(checkboxWithTitle: "오래 사용하지 않는 포트 자동 정리", target: nil, action: nil)
+  let cleanupDays = NSPopUpButton()
+  let cleanupLastRun = label("아직 자동 정리를 실행하지 않았습니다.", size: 10, color: .secondaryLabelColor)
   let preview = label("URL 또는 포트 번호를 붙여넣으세요.", size: 11, color: .secondaryLabelColor)
   let errorLabel = label("", size: 11, color: .systemRed)
   let hostRows = vertical([])
@@ -61,6 +64,14 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
     login.setButtonType(.switch)
     login.state = loginEnabled ? .on : .off
     loginButton = login
+    cleanupEnabled.target = self
+    cleanupEnabled.action = #selector(saveCleanupPolicy)
+    cleanupEnabled.toolTip = "업무 ON에서 현재 비활성으로 확인한 미고정 포트만 하루 한 번 정리합니다."
+    cleanupDays.addItems(withTitles: ["3일", "7일", "14일", "30일"])
+    cleanupDays.selectItem(at: 1)
+    cleanupDays.target = self
+    cleanupDays.action = #selector(saveCleanupPolicy)
+    cleanupDays.widthAnchor.constraint(equalToConstant: 90).isActive = true
     let sections: [NSView] = [
       label("SSH 대상", size: 15, bold: true),
       label("기존 SSH 별칭과 키를 사용합니다. 처음 연결은 터미널에서 확인해 주세요.", size: 11, color: .secondaryLabelColor),
@@ -79,6 +90,11 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
         ActionButton("등록 / 수정 저장") { [weak self] in self?.savePort() },
         ActionButton("입력 초기화") { [weak self] in self?.resetForm() },
       ]), serverRows,
+      separator(), label("오래된 포트 정리", size: 13, bold: true),
+      horizontal([cleanupEnabled, cleanupDays]), cleanupLastRun,
+      label(
+        "마지막 활성 확인 이후 선택한 기간이 지나고 현재도 비활성이면 등록만 제거합니다. 고정·중지·미확인 항목은 유지합니다. 삭제 결과는 팝업에서 되돌릴 수 있습니다.",
+        size: 11, color: .secondaryLabelColor),
       separator(), label("원본·대기·원격 용량 (MiB)", size: 13, bold: true),
       label(
         "원본 1개 / 로컬 대기 합계 / 원격 보관 합계 순서입니다. 화질을 줄이지 않습니다.", size: 11, color: .secondaryLabelColor),
@@ -151,14 +167,29 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
         ]))
     }
     for port in config.ports {
+      let info = label("\(port.displayName) · \(port.localPort)", size: 11)
+      info.maximumNumberOfLines = 1
+      info.lineBreakMode = .byTruncatingMiddle
+      info.toolTip = info.stringValue
+      info.widthAnchor.constraint(equalToConstant: 220).isActive = true
       serverRows.addArrangedSubview(
         horizontal([
-          label("\(port.displayName) · \(port.localPort)", size: 11),
+          info,
           ActionButton("수정") { [weak self] in self?.edit(port) },
           ActionButton(port.enabled ? "중지" : "켜기") { [weak self] in self?.togglePort(port.id) },
+          ActionButton(port.pinned == true ? "고정 해제" : "고정") { [weak self] in
+            self?.bridge.send(
+              "pin_port", ["port_id": port.id, "on": port.pinned != true],
+              reply: { [weak self] r in self?.showResult(r) })
+          },
           ActionButton("삭제") { [weak self] in self?.removePort(port.id) },
         ]))
     }
+    cleanupEnabled.state = config.portCleanupEnabled == true ? .on : .off
+    cleanupDays.selectItem(
+      withTitle: "\(config.portCleanupDays == 0 ? 7 : config.portCleanupDays ?? 7)일")
+    cleanupDays.isEnabled = cleanupEnabled.state == .on
+    cleanupLastRun.stringValue = "최근 실행: \(portCleanupDate(config.portCleanupHistory?.lastRun))"
     imageLimit.stringValue = String(config.limits.imageBytes / 1_048_576)
     queueLimit.stringValue = String(config.limits.queueBytes / 1_048_576)
     inboxLimit.stringValue = String(config.limits.inboxBytes / 1_048_576)
@@ -287,11 +318,12 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
     }
     let input = localPort.stringValue.trimmingCharacters(in: .whitespaces)
     let port = input.isEmpty ? e.remotePort : Int(input) ?? 0
-    let entry = PortConfig(
+    var entry = PortConfig(
       id: editID ?? identifier(), name: serverName.stringValue.trimmingCharacters(in: .whitespaces),
       host: host, endpoint: e, localPort: port,
       enabled: c.ports.first(where: { $0.id == editID })?.enabled ?? true,
       title: c.ports.first(where: { $0.id == editID })?.title)
+    entry.pinned = c.ports.first(where: { $0.id == editID })?.pinned
     if let index = c.ports.firstIndex(where: { $0.id == entry.id }) {
       c.ports[index] = entry
     } else {
@@ -331,6 +363,13 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
     else { return }
     c.ports[index].enabled.toggle()
     save(c)
+  }
+  @objc private func saveCleanupPolicy() {
+    let on = cleanupEnabled.state == .on
+    let days = [3, 7, 14, 30][max(0, cleanupDays.indexOfSelectedItem)]
+    cleanupDays.isEnabled = on
+    bridge.send(
+      "set_port_cleanup", ["on": on, "days": days], reply: { [weak self] r in self?.showResult(r) })
   }
   private func saveLimits() {
     guard var c = bridge.state?.config, let image = Int64(imageLimit.stringValue),

@@ -21,6 +21,7 @@ import (
 type Command struct {
 	ID             string       `json:"id"`
 	Method         string       `json:"method"`
+	Days           int          `json:"days"`
 	On             bool         `json:"on"`
 	Config         model.Config `json:"config"`
 	Input          string       `json:"input"`
@@ -94,6 +95,12 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 			if removed != nil {
 				event.Result = map[string]any{"removed_port": removed}
 			}
+		case "set_port_cleanup":
+			problem = e.SetPortCleanup(c.On, c.Days)
+		case "undo_port_cleanup":
+			problem = e.UndoPortCleanup()
+		case "pin_port":
+			problem = e.SetPortPinned(c.PortID, c.On)
 		case "parse":
 			event.Result = address.Parse(c.Input)
 		case "send_files":

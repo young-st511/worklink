@@ -55,6 +55,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     dashboard.sendFiles = { [weak self] in self?.chooseFiles() }
     dashboard.copyFile = { [weak self] f in self?.copyFile(f) }
     dashboard.cancelFiles = { [weak self] in self?.bridge.send("cancel_files") }
+    dashboard.undoPortCleanup = { [weak self] in
+      self?.bridge.send(
+        "undo_port_cleanup",
+        reply: { [weak self] r in
+          if let error = r["error"] as? String {
+            self?.notice("오류 · \(error)")
+          } else {
+            self?.notice("포트를 복원하고 고정했습니다. 상세에서 고정을 풀 수 있습니다.")
+          }
+        })
+    }
+    dashboard.pinPort = { [weak self] port in
+      self?.bridge.send(
+        "pin_port", ["port_id": port.id, "on": port.pinned != true],
+        reply: { [weak self] r in self?.result(r) })
+    }
     dashboard.toggle = { [weak self] in self?.toggle() }
     dashboard.settings = { [weak self] in self?.showSettings() }
     dashboard.quit = { NSApp.terminate(nil) }

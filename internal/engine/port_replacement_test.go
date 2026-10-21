@@ -114,8 +114,8 @@ func TestActivityWriteFailureRecovers(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.recordPortChecks("office", map[string]bool{id: false}, 1)
-	if _, ok := e.activity[id]; ok {
-		t.Fatal("uncommitted activity retained")
+	if !e.activityDirty {
+		t.Fatal("uncommitted activity not protected")
 	}
 	os.Remove(path)
 	e.recordPortChecks("office", map[string]bool{id: false}, 1)

@@ -21,6 +21,7 @@ type Host struct {
 	Helper string `json:"helper"`
 }
 type Port struct {
+	Pinned    bool             `json:"pinned,omitempty"`
 	ID        string           `json:"id"`
 	Name      string           `json:"name"`
 	Host      string           `json:"host"`
@@ -35,16 +36,24 @@ type Limits struct {
 	QueueCount int   `json:"queue_count"`
 	InboxBytes int64 `json:"inbox_bytes"`
 }
+type PortCleanupHistory struct {
+	LastRun   time.Time `json:"last_run"`
+	RemovedAt time.Time `json:"removed_at"`
+	Removed   []Port    `json:"removed"`
+}
 type Config struct {
-	Revision  uint64 `json:"revision"`
-	Hosts     []Host `json:"hosts"`
-	Ports     []Port `json:"ports"`
-	ImageHost string `json:"image_host"`
-	Limits    Limits `json:"limits"`
+	PortCleanupEnabled bool                `json:"port_cleanup_enabled"`
+	PortCleanupDays    int                 `json:"port_cleanup_days"`
+	PortCleanupHistory *PortCleanupHistory `json:"port_cleanup_history,omitempty"`
+	Revision           uint64              `json:"revision"`
+	Hosts              []Host              `json:"hosts"`
+	Ports              []Port              `json:"ports"`
+	ImageHost          string              `json:"image_host"`
+	Limits             Limits              `json:"limits"`
 }
 
 func DefaultConfig() Config {
-	return Config{Hosts: []Host{}, Ports: []Port{}, Limits: Limits{64 << 20, 256 << 20, 8, 2 << 30}}
+	return Config{PortCleanupDays: 7, Hosts: []Host{}, Ports: []Port{}, Limits: Limits{64 << 20, 256 << 20, 8, 2 << 30}}
 }
 
 var hostRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,127}$`)
@@ -78,6 +87,19 @@ func (c Config) Validate() error { return c.validate(16) }
 // ValidatePortAddition validates one pending addition before safe replacement.
 func (c Config) ValidatePortAddition() error { return c.validate(17) }
 func (c Config) validate(maxPorts int) error {
+	if c.PortCleanupDays != 0 && c.PortCleanupDays != 3 && c.PortCleanupDays != 7 && c.PortCleanupDays != 14 && c.PortCleanupDays != 30 {
+		return errors.New("포트 정리 기간은 3·7·14·30일 중 선택해 주세요")
+	}
+	if h := c.PortCleanupHistory; h != nil {
+		if len(h.Removed) > 16 {
+			return errors.New("포트 정리 기록이 너무 큽니다")
+		}
+		for _, p := range h.Removed {
+			if !ValidID(p.ID) {
+				return errors.New("포트 정리 기록을 확인해 주세요")
+			}
+		}
+	}
 	if len(c.Ports) > maxPorts || len(c.Hosts) > 8 {
 		return errors.New("서버는 최대 16개, SSH 대상은 최대 8개까지 등록할 수 있습니다")
 	}

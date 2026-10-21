@@ -43,6 +43,7 @@ struct SuspensionTracker {
   mutating func resume(_ reason: String) { reasons.remove(reason) }
 }
 struct PortConfig: Codable {
+  var pinned: Bool? = nil
   var id: String
   var name: String
   var host: String
@@ -60,7 +61,26 @@ struct LimitsConfig: Codable {
   var queueCount: Int
   var inboxBytes: Int64
 }
+struct PortCleanupHistory: Codable {
+  var lastRun: String
+  var removedAt: String
+  var removed: [PortConfig]
+  init(lastRun: String, removedAt: String, removed: [PortConfig]) {
+    self.lastRun = lastRun
+    self.removedAt = removedAt
+    self.removed = removed
+  }
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    lastRun = try c.decode(String.self, forKey: .lastRun)
+    removedAt = try c.decode(String.self, forKey: .removedAt)
+    removed = try c.decodeIfPresent([PortConfig].self, forKey: .removed) ?? []
+  }
+}
 struct Config: Codable {
+  var portCleanupEnabled: Bool? = nil
+  var portCleanupDays: Int? = nil
+  var portCleanupHistory: PortCleanupHistory? = nil
   var revision: UInt64
   var hosts: [HostConfig]
   var ports: [PortConfig]
@@ -414,4 +434,13 @@ func separator() -> NSBox {
 }
 func fileSize(_ bytes: Int64) -> String {
   ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
+}
+
+func portCleanupDate(_ text: String?) -> String {
+  guard let text else { return "아직 실행하지 않음" }
+  let format = ISO8601DateFormatter()
+  format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let date = format.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+  guard let date, date.timeIntervalSince1970 > 0 else { return "아직 실행하지 않음" }
+  return DateFormatter.localizedString(from: date, dateStyle: .short, timeStyle: .short)
 }
