@@ -79,6 +79,12 @@ type peer struct {
 func (p *peer) conn() transport.Connection     { p.mu.Lock(); defer p.mu.Unlock(); return p.connection }
 func (p *peer) setConn(c transport.Connection) { p.mu.Lock(); defer p.mu.Unlock(); p.connection = c }
 
+type portActivity struct {
+	Identity      string    `json:"identity"`
+	Reachable     bool      `json:"reachable"`
+	InactiveSince time.Time `json:"inactive_since"`
+}
+
 type Engine struct {
 	mu        sync.Mutex
 	restoreMu sync.Mutex
@@ -90,6 +96,8 @@ type Engine struct {
 	peers     map[string]*peer
 	wake      chan struct{}
 	now       func() time.Time
+	activity  map[string]portActivity
+	checkedAt map[string]time.Time
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -102,7 +110,7 @@ func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
 		return nil, err
 	}
 	s.Limits = c.Limits
-	e := &Engine{now: time.Now, store: s, connect: connect, emit: emit, peers: map[string]*peer{}, wake: make(chan struct{}, 1), state: State{Config: c, Version: model.Version, Hosts: []HostState{}, Ports: []PortState{}, Jobs: []Job{}}}
+	e := &Engine{activity: map[string]portActivity{}, checkedAt: map[string]time.Time{}, now: time.Now, store: s, connect: connect, emit: emit, peers: map[string]*peer{}, wake: make(chan struct{}, 1), state: State{Config: c, Version: model.Version, Hosts: []HostState{}, Ports: []PortState{}, Jobs: []Job{}}}
 	if connect == nil {
 		e.connect = transport.Connect
 	}
@@ -121,6 +129,16 @@ func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
 	}
 	if err = e.recoverQueue(); err != nil {
 		return nil, err
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "port-activity.json")); err == nil {
+		if err = json.Unmarshal(data, &e.activity); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if e.activity == nil {
+		e.activity = map[string]portActivity{}
 	}
 	return e, nil
 }
@@ -158,6 +176,7 @@ func (e *Engine) SetOn(on bool) {
 	oldCancel := e.cancel
 	oldPeers := e.peers
 	e.peers = map[string]*peer{}
+	e.checkedAt = map[string]time.Time{}
 	e.state.Hosts = []HostState{}
 	e.state.Ports = []PortState{}
 	for n := range e.state.Jobs {
@@ -187,16 +206,21 @@ func (e *Engine) SetOn(on bool) {
 		cancel()
 	}
 }
-func (e *Engine) SaveConfig(c model.Config) error {
+func (e *Engine) SaveConfig(c model.Config) error { _, err := e.saveConfig(c); return err }
+func (e *Engine) saveConfig(c model.Config) (*model.Port, error) {
+	c, removed, err := e.trimInactive(c)
+	if err != nil {
+		return nil, err
+	}
 	if err := c.Validate(); err != nil {
-		return err
+		return nil, err
 	}
 	e.mu.Lock()
 	for _, j := range e.state.Jobs {
 		if j.Status != "complete" {
 			if _, ok := c.Host(j.Host); !ok {
 				e.mu.Unlock()
-				return errors.New("대기 이미지가 있는 SSH 대상은 삭제하거나 이름을 바꿀 수 없습니다. 먼저 대기 파일을 정리해 주세요")
+				return nil, errors.New("대기 이미지가 있는 SSH 대상은 삭제하거나 이름을 바꿀 수 없습니다. 먼저 대기 파일을 정리해 주세요")
 			}
 		}
 	}
@@ -207,9 +231,10 @@ func (e *Engine) SaveConfig(c model.Config) error {
 		if wasOn {
 			e.SetOn(true)
 		}
-		return err
+		return nil, err
 	}
 	e.mu.Lock()
+	e.prunePortActivityLocked(e.state.Config, c)
 	e.state.Config = c
 	e.store.Limits = c.Limits
 	e.mu.Unlock()
@@ -217,7 +242,7 @@ func (e *Engine) SaveConfig(c model.Config) error {
 	if wasOn {
 		e.SetOn(true)
 	}
-	return nil
+	return removed, nil
 }
 func (e *Engine) Enqueue(path, ext string, count int) (Job, error) {
 	e.mu.Lock()
@@ -450,6 +475,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			e.failedPeer(h.Name, p, err)
 			continue
 		}
+		e.recordPortChecks(h.Name, r.Checks, gen)
 		if p.forwardRetries == nil {
 			p.forwardRetries = map[string]forwardRetry{}
 		}

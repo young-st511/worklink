@@ -73,8 +73,12 @@ func (c Config) Host(name string) (Host, bool) {
 	}
 	return Host{}, false
 }
-func (c Config) Validate() error {
-	if len(c.Ports) > 16 || len(c.Hosts) > 8 {
+func (c Config) Validate() error { return c.validate(16) }
+
+// ValidatePortAddition validates one pending addition before safe replacement.
+func (c Config) ValidatePortAddition() error { return c.validate(17) }
+func (c Config) validate(maxPorts int) error {
+	if len(c.Ports) > maxPorts || len(c.Hosts) > 8 {
 		return errors.New("서버는 최대 16개, SSH 대상은 최대 8개까지 등록할 수 있습니다")
 	}
 	if c.Limits.ImageBytes <= 0 || c.Limits.ImageBytes > 256<<20 || c.Limits.QueueBytes < c.Limits.ImageBytes || c.Limits.QueueBytes > 1<<30 || c.Limits.QueueCount < 1 || c.Limits.QueueCount > 64 || c.Limits.InboxBytes < c.Limits.ImageBytes {

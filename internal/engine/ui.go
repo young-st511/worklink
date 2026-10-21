@@ -88,7 +88,11 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 		case "toggle":
 			e.SetOn(c.On)
 		case "save_config":
-			problem = e.SaveConfig(c.Config)
+			var removed *model.Port
+			removed, problem = e.saveConfig(c.Config)
+			if removed != nil {
+				event.Result = map[string]any{"removed_port": removed}
+			}
 		case "parse":
 			event.Result = address.Parse(c.Input)
 		case "upload":

@@ -174,7 +174,9 @@ final class SettingsController: NSWindowController, NSTextFieldDelegate {
     if let error = result["error"] as? String {
       message(error)
     } else {
-      message("저장했습니다.")
+      let removed = (result["result"] as? [String: Any])?["removed_port"] as? [String: Any]
+      let suffix = (removed?["local_port"] as? Int).map { " 비활성 포트 \($0)을 정리했습니다." } ?? ""
+      message("저장했습니다.\(suffix)")
       refresh()
     }
   }

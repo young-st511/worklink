@@ -105,3 +105,8 @@ S32 구현: `DashboardController.render/resetScroll`. 서버 section 앞의 이�
 S33 구현: `Engine.sendNext/cycle/failedPeer`, `peer.forwardRetries`, `newEventEmitter/ServeUI`. 전송할 연결이 있는 작업만 sending으로 바꾸고 만료 저장 실패는 queued로 복구해 재시도합니다. 상태 중복 생략은 UI 출력 단계에서만 적용하고 엔진 내부 이벤트 의미는 유지합니다. 포트별 실패 이력/선택 target/next deadline으로 충돌 재시도를 제한합니다.
 
 S33 UI 보완: 상태 heartbeat를 제거해도 로컬 클립보드 changeCount 변경 시 이미지의 준비됨 표시를 해제합니다. 추가 state/타이머를 만들지 않고 기존 감지 callback을 사용합니다.
+
+- S34: 포트 최대16/SSH최대8은 유지합니다. 16개에서 새 포트 등록 시 기존 포트 중 가장 오래 비활성인 하나를 교체하고 제거 항목을 결과로 알려줍니다. 정상 host 연결과 최근 원격 check로 비활성이 확인돼야 하며 활성·미확인·네트워크/SSH 장애는 제거 근거가 아닙니다. 비활성 시작 시각은 변화 때만 저장합니다. 모든 항목이 보호되면 등록을 거부하고 이유를 표시합니다. 원격 서버는 종료하지 않고 기존 사용자 SSH 설정을 바꾸지 않습니다.
+- S35: 일반 파일을 메뉴바 드롭/Finder 서비스/파일 선택으로 명시적으로 보냅니다. 업무ON/연결된 선택 SSH 대상 필요, 최대8개·각256MiB·일반 파일만 허용합니다. 원본을 별도 SSH 채널로 스트리밍하고 SHA/ACK 후 완료 처리합니다. 진행률·취소·최근파일/경로복사를 제공하며 batch 완료 경로 복사는 clipboard/generation guard를 따릅니다. 이미지 감시/큐와 원격 관리 기록은 분리하고 파일명은 전송별 폴더에 유지합니다. 기록에 맞는24시간 지난 파일만 정리하며 원본은 삭제하지 않습니다. 폴더/심볼릭링크/파일약속/자동오프라인재시도는 제외합니다.
+
+S34 구현: `Engine.recordPortChecks/trimInactive/prunePortActivityLocked`, `portActivity.Identity`. 관측 대상별 비활성 시작 시각을 상태 전환 시에만 저장하고 최신 15초 확인·연결 상태·identity 일치를 모두 요구합니다. 저장 실패 시 freshness를 무효화합니다. 두 독립 리뷰와 race 회귀(활성/미확인/단절/재시작/주소 수정/쓰기 실패), native self-test를 통과했습니다.

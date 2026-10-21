@@ -184,8 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               dashboard.finishQuickRegistration(error, success: false)
               return
             }
+            let removed = (result["result"] as? [String: Any])?["removed_port"] as? [String: Any]
+            let replaced = (removed?["local_port"] as? Int).map { " · 비활성 포트 \($0) 정리" } ?? ""
             dashboard.finishQuickRegistration(
-              "\(host) · 원격 포트 \(address.remotePort) 등록 완료", success: true)
+              "\(host) · 원격 포트 \(address.remotePort) 등록 완료\(replaced)", success: true)
           })
       })
   }
