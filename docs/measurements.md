@@ -60,3 +60,7 @@ Python 부모 프로세스의 최대 RSS는 16.25 MiB, `lsof` 자식의 최대 R
 5. 등록한 포트만 TCP 확인하는 방식의 5초 주기·타임아웃·동시 확인 제한을 실제 두 Mac에서 측정합니다.
 
 Apple은 타이머 중지·tolerance와 실제 에너지 도구 사용을 안내하고 있습니다. Go 코어가 생기면 공식 진단 도구로 CPU·heap·blocking 비용도 확인합니다. [Apple 에너지 가이드](https://developer.apple.com/library/archive/documentation/Performance/Conceptual/power_efficiency_guidelines_osx/Timers.html), [Go Diagnostics](https://go.dev/doc/diagnostics)
+
+## 후속 제품 점검
+
+[2026-10-22 배터리·DX 점검](energy-audit-2026-10-22.md)에 실행 중인 앱·코어·SSH의 짧은 CPU/RSS 관측, 코드상 보호 장치와 개선 후보를 기록했습니다. AC 전원에서의 관측으로 배터리 절감률은 측정하지 않았습니다.
