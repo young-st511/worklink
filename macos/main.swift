@@ -287,7 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       || dashboard.notice.hasPrefix("오류")
     let networkWaiting = state?.networkUnavailable == true
     let mode: MenuBarGlyph.Mode =
-      !desiredOn ? .off : suspended || networkWaiting ? .paused : problem ? .problem : .on
+      !desiredOn ? .off : suspended ? .paused : problem ? .problem : .on
     let preservesImage = clipboardPreferences.preservesImage
     item.button?.image = MenuBarGlyph.image(for: mode, preservesImage: preservesImage)
     item.button?.alphaValue = desiredOn ? 1 : 0.65

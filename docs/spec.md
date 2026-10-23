@@ -136,3 +136,6 @@ S39 구현: `StatusRightEventRouter`가 앱 local monitor에서 자체 status �
 
 
 S40 구현: `StatusRightEventRouter.watchRelease/finishRelease/clearReleaseWatch`는 합성up일 때만30Hz 단발 확인을 예약하고300회·uptime10초 상한, 타깃/창/token/취소를 검사합니다. `RightClickHold.onHoldRejected`는0.5초 타이머가 release watcher보다 먼저 실제놓임을 감지한 경우 내부타깃의 short를 완료하고 이탈은 취소합니다. `Engine.Shutdown/closeAsyncLocked`와 `ServeUI` defer는 새 업무 시작을 막고 기존 loop→비동기소유Close 순서로 drain합니다. fake 순서·실제 앱dispatch·실제SSH 단절EOF 회귀를 검증했습니다. 물리 메뉴바 재확인과 비정상 강제종료 복구는 이 검증과 구분합니다.
+
+
+- S41 구현: `AppDelegate.updateIcon`은 네트워크 연결 대기만으로 메뉴바 glyph를 바꾸지 않습니다. 업무ON 기본 체인·원본 유지 사진 배지는 유지하고, `Ⅱ`는 잠금/절전 suspension일 때만 표시합니다. 대기 사유는 기존 팝업·툴팁/접근성 설명에서 확인하며 실제 오류 표시는 유지합니다. 네트워크 안정화/재시도·클립보드 동작은 바꾸지 않습니다.
