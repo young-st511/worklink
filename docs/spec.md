@@ -121,3 +121,8 @@ S36 구현: `Engine.recordPortChecks/cleanupPorts/portObservedLocked/portCleanup
 
 
 S37 구현: `NetworkRecoveryGate/NetworkPowerMonitor`, `AppDelegate`의 업무·잠금·절전 lifecycle, `Engine.SetEnvironment/onlineContext/nextDelay/RequestPortRefresh/cycle`, `peer`의 독립 transport context를 사용합니다. 제품 UI 코어는 경로 미확인으로 시작하며 네이티브 안정화 이벤트 뒤 연결합니다. 단절 직전 연결 시작부터 30초 recovery floor와 기존 backoff를 함께 지킵니다. OFF/무경로는 event-only 대기하고, 차단된 호스트의 대기 이미지도 온라인일 때 만료 deadline을 가지며 만료 저장 실패는 최소1분 뒤 재시도합니다. `sendNext` 시작의 네트워크/취소 guard와 네트워크 epoch로 취소된 작업의 원본·동일 ID를 보호합니다. 임시 fixture·fake clock/path·native self-test와 실제 SSH 회귀로 정책을 검증하며 제품 Wi-Fi/잠금 조작 및 배터리 절감률 실측은 별도입니다.
+
+- S38: 메뉴바에서 우클릭을0.5초 계속 누르면 버튼을 떼기 전에 캡처 원본 유지/원격 경로 자동 복사를 한 번 전환합니다. 짧은 우클릭만 업무ON/OFF를 전환하고 긴 누르기 뒤 up은 업무를 바꾸지 않습니다. 좌클릭 팝업·파일 드롭은 유지합니다. 누르는 중 아이콘 밖으로 이동/잠금/절전/뷰 제거/종료는 취소하며 오래된 timer는 새 누르기를 건드리지 않습니다. 단발 common-mode timer만 사용하고 전역 입력 감시·상시 polling·시스템 알림은 추가하지 않습니다. 모드 setter를 재사용해 설정·사진 배지·팝업·tooltip을 즉시 갱신하고 기존 클립보드/업무세대/SSH를 유지합니다.
+
+
+S38 구현: `RightClickHold`의0.5초 단발 common-mode timer/token, `StatusFileDropView`의 down/up/drag·뷰 제거 취소, `AppDelegate`의 모드 setter·잠금/절전/종료 취소를 연결했습니다. threshold에서 현재 우클릭 버튼과 아이콘 내 포인터를 한 번 확인하고, 긴 동작 뒤 release는 소비합니다. 업무 OFF에서도 다음 작업을 위한 모드 전환은 가능하며 잠금/절전 중에는 실행하지 않습니다. 전환은 현재 클립보드를 바꾸지 않습니다.

@@ -16,6 +16,15 @@ enum FileSelection {
 final class StatusFileDropView: NSView {
   var receive: (([URL]) -> Bool)?
   var clicked: (() -> Void)?
+  var rightClicked: (() -> Void)?
+  var rightHeld: (() -> Void)?
+  lazy var rightPress = RightClickHold(
+    short: { [weak self] in self?.rightClicked?() },
+    long: { [weak self] in self?.rightHeld?() },
+    isHeld: { [weak self] in
+      guard let self, let window = self.window, NSEvent.pressedMouseButtons & 2 != 0 else { return false }
+      return self.bounds.contains(self.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil))
+    })
   private var dragging = false
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -23,13 +32,24 @@ final class StatusFileDropView: NSView {
     setAccessibilityElement(false)
   }
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-  override func mouseDown(with event: NSEvent) {}
+  override func mouseDown(with event: NSEvent) { rightPress.cancel() }
   override func mouseUp(with event: NSEvent) {
     if bounds.contains(convert(event.locationInWindow, from: nil)) { clicked?() }
   }
-  override func rightMouseDown(with event: NSEvent) {}
-  override func rightMouseUp(with event: NSEvent) { clicked?() }
+  override func rightMouseDown(with event: NSEvent) { rightPress.begin() }
+  override func rightMouseUp(with event: NSEvent) {
+    if bounds.contains(convert(event.locationInWindow, from: nil)) { rightPress.end() }
+    else { rightPress.cancel() }
+  }
+  override func rightMouseDragged(with event: NSEvent) {
+    if !bounds.contains(convert(event.locationInWindow, from: nil)) { rightPress.cancel() }
+  }
+  override func viewWillMove(toWindow newWindow: NSWindow?) {
+    if newWindow == nil { rightPress.cancel() }
+    super.viewWillMove(toWindow: newWindow)
+  }
   override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+    rightPress.cancel()
     dragging = !FileSelection.urls(sender.draggingPasteboard).isEmpty
     needsDisplay = true
     return dragging ? .copy : []

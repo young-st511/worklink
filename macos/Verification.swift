@@ -252,6 +252,7 @@ func renderPreviews(_ directory: URL) throws {
   print("Rendered actual AppKit dashboard views and settings to \(directory.path)")
 }
 func nativeSelfTest() throws {
+  try nativeRightHoldSelfTest()
   try nativeFileSelfTest()
   try nativeCleanupSelfTest()
   try nativeEnvironmentSelfTest()
@@ -1321,4 +1322,82 @@ func nativeEnvironmentSelfTest() throws {
   try check(
     refresh && controller.view.frame.size == DashboardController.panelSize,
     "power policy changed panel or refresh callback")
+}
+
+
+func nativeRightHoldSelfTest() throws {
+  func require(_ value: Bool, _ message: String) throws {
+    if !value { throw NSError(domain: "Worklink QA", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+  }
+  var short = 0, long = 0, held = true
+  var callbacks: [() -> Void] = []
+  var delays: [TimeInterval] = []
+  let press = RightClickHold(
+    short: { short += 1 }, long: { long += 1 }, isHeld: { held },
+    schedule: { delay, action in delays.append(delay); callbacks.append(action); return {} })
+  press.begin()
+  press.begin()
+  try require(callbacks.count == 1 && delays == [0.5], "hold timer duplicated/wrong threshold")
+  press.end()
+  callbacks[0]()
+  try require(short == 1 && long == 0, "short press or stale timer failed")
+  press.begin()
+  callbacks[1]()
+  callbacks[1]()
+  try require(long == 1 && short == 1, "hold did not fire once before release")
+  press.end()
+  try require(short == 1, "long release toggled work")
+  press.begin()
+  press.cancel()
+  callbacks[2]()
+  press.end()
+  try require(long == 1 && short == 1, "cancelled press executed")
+  press.begin()
+  held = false
+  callbacks[3]()
+  press.end()
+  try require(long == 1 && short == 1, "lost release triggered action")
+  held = true
+  press.begin()
+  callbacks[0]()
+  try require(long == 1, "old timer affected new press")
+  callbacks[4]()
+  press.end()
+  try require(long == 2 && short == 1, "new hold failed")
+
+  var timedLong = 0, timedShort = 0
+  let timed = RightClickHold(short: { timedShort += 1 }, long: { timedLong += 1 }, isHeld: { true })
+  timed.begin()
+  RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+  try require(timedLong == 0, "hold fired early")
+  RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.45))
+  try require(timedLong == 1 && timedShort == 0, "real timer did not fire before up")
+  timed.end()
+  try require(timedShort == 0, "real long release toggled work")
+
+  let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 24, height: 24),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  let input = StatusFileDropView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+  window.contentView = input
+  var left = 0, right = 0
+  input.clicked = { left += 1 }
+  input.rightClicked = { right += 1 }
+  func event(_ type: NSEvent.EventType, outside: Bool = false) -> NSEvent {
+    NSEvent.mouseEvent(with: type, location: NSPoint(x: outside ? 30 : 12, y: 12),
+      modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 0, clickCount: 1, pressure: 1)!
+  }
+  input.mouseDown(with: event(.leftMouseDown))
+  input.mouseUp(with: event(.leftMouseUp))
+  input.rightMouseDown(with: event(.rightMouseDown))
+  input.rightMouseUp(with: event(.rightMouseUp))
+  try require(left == 1 && right == 1, "input view lost left/short right click routing")
+  input.rightMouseDown(with: event(.rightMouseDown))
+  input.rightMouseDragged(with: event(.rightMouseDragged, outside: true))
+  input.rightMouseUp(with: event(.rightMouseUp))
+  try require(right == 1, "drag-out triggered short click")
+  input.rightMouseDown(with: event(.rightMouseDown))
+  input.viewWillMove(toWindow: nil)
+  input.rightMouseUp(with: event(.rightMouseUp))
+  try require(right == 1, "detached view retained press")
 }

@@ -265,3 +265,15 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 - API 근거: Apple [NWPathMonitor](https://developer.apple.com/documentation/network/nwpathmonitor), [isLowPowerModeEnabled](https://developer.apple.com/documentation/foundation/processinfo/islowpowermodeenabled). 네트워크 경로와 원격 Tailscale/SSH 도달성은 별도로 판단하며 경로 이벤트가 기존 backoff를 초기화하지 않습니다.
 
 - `/Applications/Worklink.app`를 원자 교체하고 서명 및 주요7개 실행파일/리소스 SHA256 일치를 확인했습니다. 사용자 설정과 원격 운영 헬퍼는 변경하지 않았으며 제품 앱은 자동 재시작하지 않았습니다.
+
+
+## 2026-10-23: 긴 우클릭으로 사진 모드 전환 (S38)
+
+- 명세를 먼저 추가하고 `RightClickHold` 미구현 compile 실패를 확인한 뒤 구현했습니다. 가짜 scheduler에서0.5초 예약·중복 down·짧은 release·누르는 중 long1회·long 뒤 release0회·취소·늦은 callback·물리 버튼 해제·새 누르기의 token 격리를 검사합니다.
+- 실제 main RunLoop 단발 timer에서0.2초에는 미실행,0.65초까지는 release 없이 long1회, 이후 release의 short0회를 확인했습니다. offscreen 메뉴바 입력 뷰의 합성 이벤트로 좌클릭/짧은 우클릭 분리·아이콘 밖 드래그·뷰 분리 취소를 확인했습니다. 전역 event monitor와 반복 timer는 추가하지 않았습니다.
+- 기존 모드 setter의 별도 defaults/named pasteboard 검사(클립보드·안내·고정 header/footer/viewport 보존), 네이티브 lifecycle/입력/IME/파일 드롭·서비스·사진 glyph 회귀를 유지합니다. 전체 Go race/vet·native self-test·아이콘·서명·diff 검사를 통과하고 모드 ON의 AppKit offscreen 렌더를 열어 확인했습니다.
+- 실제 메뉴바의 물리 우클릭·누르는 중 사진 배지 전환은 CUA 접근 거부로 미검증이며 우회하지 않았습니다. 이번 변경은 네이티브 입력만 다루므로 실제 SSH 회귀를 다시 실행하지 않았습니다. 직전 S37의 최종 bundled SSH/두 모드 전송 검증은 통과했습니다.
+
+- `/Applications/Worklink.app`를 원자 교체하고 서명·주요7개 실행파일/리소스 SHA256 일치를 확인했습니다. 제품 앱은 자동 재시작하지 않았습니다.
+
+- 스펙/코드 독립 리뷰에서 추가 blocker 없음입니다. 스펙 리뷰의 최신 native self-test는 통과했으며 코드 리뷰어의 추가 독립 번들 실행은 서버 중단으로 결과를 확인하지 못해 검증 결과에 포함하지 않습니다. 구현 담당자의 최종 native self-test·렌더·설치 검증은 완료됐습니다.

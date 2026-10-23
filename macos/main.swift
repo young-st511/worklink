@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   let dashboard = DashboardController()
   let popover = NSPopover()
   var item: NSStatusItem!
+  var statusInput: StatusFileDropView?
   var settingsController: SettingsController?
   var desiredOn = false
   var suspension = SuspensionTracker()
@@ -39,12 +40,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.target = self
     item.button?.action = #selector(statusClicked)
-    item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    item.button?.sendAction(on: [.leftMouseUp, .rightMouseDown, .rightMouseUp])
     if let button = item.button {
       let drop = StatusFileDropView(frame: button.bounds)
       drop.autoresizingMask = [.width, .height]
       drop.receive = { [weak self] urls in self?.sendFiles(urls) ?? false }
-      drop.clicked = { [weak self] in self?.statusClicked() }
+      drop.clicked = { [weak self] in self?.showMenu() }
+      drop.rightClicked = { [weak self] in self?.toggle() }
+      drop.rightHeld = { [weak self] in
+        guard let self, !self.suspended else { return }
+        self.setClipboardMode(!self.clipboardPreferences.preservesImage)
+      }
+      statusInput = drop
       button.addSubview(drop)
     }
     NSApp.servicesProvider = self
@@ -141,7 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     afterLaunch?()
   }
   @objc func statusClicked() {
-    if NSApp.currentEvent?.type == .rightMouseUp { toggle() } else { showMenu() }
+    switch NSApp.currentEvent?.type {
+    case .rightMouseDown: statusInput?.rightPress.begin()
+    case .rightMouseUp: statusInput?.rightPress.end()
+    default: showMenu()
+    }
   }
   func showMenu() {
     guard let button = item.button else { return }
@@ -284,10 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       : !desiredOn ? "업무 OFF" : networkWaiting ? "네트워크 연결 대기" : problem ? "연결 또는 전송 오류" : "업무 ON"
     let powerMode = state?.lowPower == true ? " · 저전력 모드" : ""
     let clipboardMode = preservesImage ? "캡처 원본 유지" : "원격 경로 자동 복사"
-    item.button?.toolTip = "Worklink · \(status)\(powerMode) · \(clipboardMode) · 좌클릭 목록 / 우클릭 전환"
+    item.button?.toolTip = "Worklink · \(status)\(powerMode) · \(clipboardMode) · 좌클릭 목록 / 우클릭 업무 전환 / 우클릭 0.5초 사진 모드"
     item.button?.setAccessibilityLabel("Worklink")
     item.button?.setAccessibilityValue("\(status) · \(clipboardMode)")
-    item.button?.setAccessibilityHelp("좌클릭으로 목록을 열고 우클릭으로 업무 모드를 전환합니다.")
+    item.button?.setAccessibilityHelp("좌클릭으로 목록을 열고 짧은 우클릭으로 업무 모드를 전환합니다. 우클릭을 0.5초 누르면 캡처 원본 유지 모드를 전환합니다.")
   }
   func notice(_ text: String) {
     dashboard.notice = text
@@ -487,6 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       notification.name == NSWorkspace.willSleepNotification
       ? "sleep"
       : notification.name == NSWorkspace.sessionDidResignActiveNotification ? "session" : "lock"
+    statusInput?.rightPress.cancel()
     suspension.pause(reason)
     stopTimer()
     if desiredOn { bridge.send("toggle", ["on": false]) }
@@ -510,6 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updateIcon()
   }
   func applicationWillTerminate(_ notification: Notification) {
+    statusInput?.rightPress.cancel()
     environmentMonitor?.stop(notify: false)
     stopTimer()
     bridge.stop()
