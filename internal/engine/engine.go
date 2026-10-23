@@ -41,15 +41,17 @@ type PortState struct {
 	RemoteHost string `json:"remote_host,omitempty"`
 }
 type State struct {
-	On         bool           `json:"on"`
-	Generation uint64         `json:"generation"`
-	Config     model.Config   `json:"config"`
-	Hosts      []HostState    `json:"hosts"`
-	Ports      []PortState    `json:"ports"`
-	Files      []FileTransfer `json:"files,omitempty"`
-	Jobs       []Job          `json:"jobs"`
-	Version    string         `json:"version"`
-	Error      string         `json:"error,omitempty"`
+	NetworkUnavailable bool           `json:"network_unavailable,omitempty"`
+	LowPower           bool           `json:"low_power,omitempty"`
+	On                 bool           `json:"on"`
+	Generation         uint64         `json:"generation"`
+	Config             model.Config   `json:"config"`
+	Hosts              []HostState    `json:"hosts"`
+	Ports              []PortState    `json:"ports"`
+	Files              []FileTransfer `json:"files,omitempty"`
+	Jobs               []Job          `json:"jobs"`
+	Version            string         `json:"version"`
+	Error              string         `json:"error,omitempty"`
 }
 type Event struct {
 	Kind   string `json:"kind"`
@@ -67,18 +69,37 @@ type forwardRetry struct {
 }
 
 type peer struct {
-	mu             sync.Mutex
-	connection     transport.Connection
-	forwarded      map[string]bool
-	targets        map[string]string
-	attempt        int
-	next           time.Time
-	blocked        bool
-	forwardRetries map[string]forwardRetry
+	lastConnect       time.Time
+	recoveryNotBefore time.Time
+	lastCheck         time.Time
+	checkSignature    string
+	mu                sync.Mutex
+	connection        transport.Connection
+	transportStop     context.CancelFunc
+	forwarded         map[string]bool
+	targets           map[string]string
+	attempt           int
+	next              time.Time
+	blocked           bool
+	forwardRetries    map[string]forwardRetry
 }
 
 func (p *peer) conn() transport.Connection     { p.mu.Lock(); defer p.mu.Unlock(); return p.connection }
 func (p *peer) setConn(c transport.Connection) { p.mu.Lock(); defer p.mu.Unlock(); p.connection = c }
+func (p *peer) setTransport(c transport.Connection, stop context.CancelFunc) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.connection = c
+	p.transportStop = stop
+}
+func (p *peer) detach() (transport.Connection, context.CancelFunc) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c, stop := p.connection, p.transportStop
+	p.connection = nil
+	p.transportStop = nil
+	return c, stop
+}
 
 type portActivity struct {
 	FirstSeen     time.Time `json:"first_seen"`
@@ -89,24 +110,30 @@ type portActivity struct {
 }
 
 type Engine struct {
-	configMu         sync.Mutex
-	mu               sync.Mutex
-	restoreMu        sync.Mutex
-	fileBatchMu      sync.Mutex
-	fileCancel       context.CancelFunc
-	session          context.Context
-	store            *storage.Store
-	state            State
-	connect          Connector
-	emit             func(Event)
-	cancel           context.CancelFunc
-	peers            map[string]*peer
-	wake             chan struct{}
-	now              func() time.Time
-	activity         map[string]portActivity
-	activityDirty    bool
-	checkedAt        map[string]time.Time
-	portCleanupRetry time.Time
+	networkContext    context.Context
+	networkCancel     context.CancelFunc
+	resetNetwork      bool
+	forceCheck        bool
+	lastManualRefresh time.Time
+	expiryRetry       time.Time
+	configMu          sync.Mutex
+	mu                sync.Mutex
+	restoreMu         sync.Mutex
+	fileBatchMu       sync.Mutex
+	fileCancel        context.CancelFunc
+	session           context.Context
+	store             *storage.Store
+	state             State
+	connect           Connector
+	emit              func(Event)
+	cancel            context.CancelFunc
+	peers             map[string]*peer
+	wake              chan struct{}
+	now               func() time.Time
+	activity          map[string]portActivity
+	activityDirty     bool
+	checkedAt         map[string]time.Time
+	portCleanupRetry  time.Time
 }
 
 func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
@@ -120,6 +147,7 @@ func New(root string, connect Connector, emit func(Event)) (*Engine, error) {
 	}
 	s.Limits = c.Limits
 	e := &Engine{activity: map[string]portActivity{}, checkedAt: map[string]time.Time{}, now: time.Now, store: s, connect: connect, emit: emit, peers: map[string]*peer{}, wake: make(chan struct{}, 1), state: State{Config: c, Version: model.Version, Hosts: []HostState{}, Ports: []PortState{}, Jobs: []Job{}}}
+	e.networkContext, e.networkCancel = context.WithCancel(context.Background())
 	if connect == nil {
 		e.connect = transport.Connect
 	}
@@ -215,7 +243,16 @@ func (e *Engine) SetOn(on bool) {
 	for _, p := range oldPeers {
 		if conn := p.conn(); conn != nil {
 			wg.Add(1)
-			go func(c transport.Connection) { defer wg.Done(); c.Close() }(conn)
+			go func(p *peer) {
+				defer wg.Done()
+				c, stop := p.detach()
+				if stop != nil {
+					stop()
+				}
+				if c != nil {
+					c.Close()
+				}
+			}(p)
 		}
 	}
 	wg.Wait()
@@ -399,22 +436,65 @@ func (e *Engine) current(gen uint64) bool {
 	return e.state.On && e.state.Generation == gen
 }
 func (e *Engine) loop(ctx context.Context, gen uint64) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	for {
-		if !e.current(gen) {
-			return
-		}
+	for e.current(gen) {
 		e.cycle(ctx, gen)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		case <-e.wake:
+		delay := e.nextDelay(gen)
+		if delay == 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-e.wake:
+			}
+		} else {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			case <-e.wake:
+				timer.Stop()
+			}
 		}
 	}
 }
 func (e *Engine) cycle(ctx context.Context, gen uint64) {
+	e.mu.Lock()
+	if !e.state.On || e.state.Generation != gen {
+		e.mu.Unlock()
+		return
+	}
+	if e.resetNetwork {
+		for _, p := range e.peers {
+			old, stop := p.detach()
+			if stop != nil {
+				stop()
+			}
+			if old != nil {
+				go old.Close()
+			}
+			p.recoveryNotBefore = p.lastConnect.Add(30 * time.Second)
+			p.forwarded = map[string]bool{}
+			p.targets = map[string]string{}
+			p.forwardRetries = map[string]forwardRetry{}
+			p.lastCheck = time.Time{}
+			p.checkSignature = ""
+		}
+		e.resetNetwork = false
+	}
+	offline := e.state.NetworkUnavailable
+	force := e.forceCheck
+	e.forceCheck = false
+	e.mu.Unlock()
+	if offline || (!e.current(gen) || ctx.Err() != nil) {
+		return
+	}
+	sessionCtx := ctx
+	ctx, stopNetwork := e.onlineContext(ctx)
+	defer stopNetwork()
+	if ctx.Err() != nil {
+		return
+	}
 	snap := e.Snapshot()
 	needed := map[string]bool{}
 	if snap.Config.ImageHost != "" {
@@ -433,7 +513,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 	}
 	e.mu.Unlock()
 	for _, h := range snap.Config.Hosts {
-		if !needed[h.Name] || !e.current(gen) {
+		if !needed[h.Name] || (!e.current(gen) || ctx.Err() != nil) {
 			continue
 		}
 		e.mu.Lock()
@@ -447,32 +527,40 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			e.peers[h.Name] = p
 		}
 		e.mu.Unlock()
-		if p.blocked || time.Now().Before(p.next) {
+		if p.blocked || e.now().Before(p.next) {
 			continue
 		}
 		if p.conn() == nil {
+			if e.now().Before(p.recoveryNotBefore) {
+				continue
+			}
+			p.lastConnect = e.now()
 			e.hostStatus(h.Name, "connecting", "")
 			e.publish()
-			conn, err := e.connect(ctx, h)
-			if !e.current(gen) {
+			transportCtx, transportStop := e.onlineContext(sessionCtx)
+			conn, err := e.connect(transportCtx, h)
+			if !e.current(gen) || ctx.Err() != nil {
+				transportStop()
 				if conn != nil {
 					conn.Close()
 				}
 				return
 			}
 			if err != nil {
+				transportStop()
 				e.failedPeer(h.Name, p, err)
 				continue
 			}
-			if !e.current(gen) {
+			if !e.current(gen) || ctx.Err() != nil {
+				transportStop()
 				conn.Close()
 				return
 			}
-			p.setConn(conn)
+			p.setTransport(conn, transportStop)
 			setup, cancel := context.WithTimeout(ctx, 8*time.Second)
 			_, err = conn.Call(setup, remote.Request{Op: "limits", Limits: &snap.Config.Limits}, nil)
 			cancel()
-			if !e.current(gen) {
+			if !e.current(gen) || ctx.Err() != nil {
 				conn.Close()
 				return
 			}
@@ -480,7 +568,6 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 				e.failedPeer(h.Name, p, err)
 				continue
 			}
-			p.attempt = 0
 			e.hostStatus(h.Name, "connected", "")
 		}
 		endpoints := map[string]address.Endpoint{}
@@ -489,16 +576,31 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 				endpoints[port.ID] = port.Endpoint
 			}
 		}
+		signatureBytes, _ := json.Marshal(endpoints)
+		signature := string(signatureBytes)
+		retryDue := false
+		for _, retry := range p.forwardRetries {
+			if !e.now().Before(retry.next) {
+				retryDue = true
+				break
+			}
+		}
+		if !force && !retryDue && signature == p.checkSignature && !p.lastCheck.IsZero() && e.now().Before(p.lastCheck.Add(checkInterval(snap.LowPower, len(endpoints)))) {
+			continue
+		}
 		checkCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 		r, err := p.conn().Call(checkCtx, remote.Request{Op: "check", Endpoints: endpoints}, nil)
 		cancel()
-		if !e.current(gen) {
+		if !e.current(gen) || ctx.Err() != nil {
 			return
 		}
 		if err != nil {
 			e.failedPeer(h.Name, p, err)
 			continue
 		}
+		p.attempt = 0
+		p.lastCheck = e.now()
+		p.checkSignature = signature
 		e.recordPortChecks(h.Name, r.Checks, gen)
 		if p.forwardRetries == nil {
 			p.forwardRetries = map[string]forwardRetry{}
@@ -510,7 +612,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 			if port.Host != h.Name || !port.Enabled {
 				continue
 			}
-			if !e.current(gen) {
+			if !e.current(gen) || ctx.Err() != nil {
 				return
 			}
 			ready := r.Checks[port.ID]
@@ -534,7 +636,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 				forwardCtx, done := context.WithTimeout(ctx, 5*time.Second)
 				problem := conn.Forward(forwardCtx, previous, true)
 				done()
-				if !e.current(gen) {
+				if !e.current(gen) || ctx.Err() != nil {
 					return
 				}
 				if problem != nil {
@@ -554,7 +656,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 				forwardCtx, done := context.WithTimeout(ctx, 5*time.Second)
 				problem := conn.Forward(forwardCtx, selected, false)
 				done()
-				if !e.current(gen) {
+				if !e.current(gen) || ctx.Err() != nil {
 					return
 				}
 				if problem != nil {
@@ -588,18 +690,23 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 		}
 		e.mu.Unlock()
 	}
-	if e.current(gen) {
+	if e.current(gen) && ctx.Err() == nil {
 		e.sendNext(ctx, gen)
 	}
-	if e.current(gen) {
+	if e.current(gen) && ctx.Err() == nil {
 		e.publish()
 	}
 }
 func (e *Engine) failedPeer(host string, p *peer, err error) {
-	if conn := p.conn(); conn != nil {
+	conn, stop := p.detach()
+	if stop != nil {
+		stop()
+	}
+	if conn != nil {
 		conn.Close()
 	}
-	p.setConn(nil)
+	p.lastCheck = time.Time{}
+	p.checkSignature = ""
 	p.forwarded = map[string]bool{}
 	p.targets = map[string]string{}
 	p.forwardRetries = map[string]forwardRetry{}
@@ -608,7 +715,7 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 	if delay > 60*time.Second {
 		delay = 60 * time.Second
 	}
-	p.next = time.Now().Add(delay)
+	p.next = e.now().Add(delay)
 	message := err.Error()
 	for _, text := range []string{"Permission denied", "Host key verification failed", "REMOTE HOST IDENTIFICATION HAS CHANGED"} {
 		if strings.Contains(message, text) {
@@ -651,7 +758,7 @@ func (e *Engine) failedPeer(host string, p *peer, err error) {
 }
 func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 	e.mu.Lock()
-	if !e.state.On || e.state.Generation != gen {
+	if !e.state.On || e.state.Generation != gen || e.state.NetworkUnavailable || ctx.Err() != nil {
 		e.mu.Unlock()
 		return
 	}
@@ -664,7 +771,10 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 		if x.Status != "queued" || x.Generation != gen {
 			continue
 		}
-		if time.Since(x.CreatedAt) > 30*time.Minute {
+		if e.now().Sub(x.CreatedAt) > 30*time.Minute {
+			if e.now().Before(e.expiryRetry) {
+				continue
+			}
 			e.state.Jobs[n].Status = "expired"
 			expired = append(expired, n)
 			continue
@@ -682,6 +792,7 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 	}
 	if len(expired) > 0 {
 		if err := e.saveJobsLocked(); err != nil {
+			e.expiryRetry = e.now().Add(time.Minute)
 			for _, n := range expired {
 				e.state.Jobs[n].Status = "queued"
 			}
@@ -689,6 +800,9 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 			e.mu.Unlock()
 			return
 		}
+	}
+	if len(expired) > 0 {
+		e.expiryRetry = time.Time{}
 	}
 	if selected < 0 {
 		e.mu.Unlock()
@@ -713,7 +827,7 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 			f.Close()
 		}
 	}
-	if !e.current(gen) {
+	if !e.current(gen) || ctx.Err() != nil {
 		return
 	}
 	if err != nil {
@@ -737,7 +851,7 @@ func (e *Engine) sendNext(ctx context.Context, gen uint64) {
 		e.finish(j, "failed", "원격 전송은 완료됐지만 로컬 임시 파일을 정리하지 못했습니다", r.Image.Path)
 		return
 	}
-	if !e.current(gen) {
+	if !e.current(gen) || ctx.Err() != nil {
 		return
 	}
 	j.Status = "complete"
@@ -852,6 +966,9 @@ func (e *Engine) RefreshTitle(id string) error {
 }
 func (e *Engine) CopyPath(id string) (string, error) {
 	snap := e.Snapshot()
+	if snap.NetworkUnavailable {
+		return "", errors.New("네트워크 연결을 기다려 주세요")
+	}
 	for _, j := range snap.Jobs {
 		if j.ID == id && j.RemotePath != "" {
 			e.mu.Lock()
@@ -864,7 +981,9 @@ func (e *Engine) CopyPath(id string) (string, error) {
 			if conn == nil {
 				return "", errors.New("원격 연결을 먼저 켜 주세요")
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			network, stopNetwork := e.onlineContext(context.Background())
+			defer stopNetwork()
+			ctx, cancel := context.WithTimeout(network, 5*time.Second)
 			defer cancel()
 			r, err := conn.Call(ctx, remote.Request{Op: "exists", ID: id}, nil)
 			if err != nil {
@@ -891,7 +1010,7 @@ func (e *Engine) RestoreOriginal(id string) (result RestoredImage, err error) {
 	}
 	defer e.restoreMu.Unlock()
 	snap := e.Snapshot()
-	if !snap.On {
+	if !snap.On || snap.NetworkUnavailable {
 		return result, errors.New("원격 연결을 먼저 켜 주세요")
 	}
 	var job Job
@@ -940,7 +1059,9 @@ func (e *Engine) RestoreOriginal(id string) (result RestoredImage, err error) {
 		}
 	}()
 	hash := sha256.New()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	network, stopNetwork := e.onlineContext(context.Background())
+	defer stopNetwork()
+	ctx, cancel := context.WithTimeout(network, 30*time.Second)
 	defer cancel()
 	response, err := downloader.Download(ctx, remote.Request{Op: "download", ID: job.ID, Size: job.Size, SHA256: job.SHA256, Extension: job.Extension}, io.MultiWriter(f, hash))
 	if err != nil {

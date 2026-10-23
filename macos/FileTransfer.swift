@@ -55,6 +55,7 @@ final class StatusFileDropView: NSView {
 extension AppDelegate {
   var fileSendProblem: String? {
     guard desiredOn, !suspended, let state = bridge.state, state.on else { return "업무 모드를 켜 주세요." }
+    if state.networkUnavailable == true { return "네트워크 연결을 기다려 주세요." }
     guard
       state.hosts.contains(where: { $0.host == state.config.imageHost && $0.status == "connected" })
     else { return "전송 대상의 SSH 연결을 기다려 주세요." }
@@ -118,6 +119,7 @@ extension AppDelegate {
       guard !paths.isEmpty else { return }
       let allowed =
         desiredOn && !suspended && bridge.state?.on == true
+        && bridge.state?.networkUnavailable != true
         && bridge.state?.generation == generation
       if ClipboardReader.replaceWithPath(
         paths.joined(separator: "\n"), board: clipboardBoard, expectedCount: count, allowed: allowed
@@ -144,6 +146,7 @@ extension AppDelegate {
       guard let path = reply["result"] as? String else { return }
       let allowed =
         desiredOn && !suspended && bridge.state?.on == true
+        && bridge.state?.networkUnavailable != true
         && bridge.state?.generation == generation
       if ClipboardReader.replaceWithPath(
         path, board: clipboardBoard, expectedCount: count, allowed: allowed)

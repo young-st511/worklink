@@ -208,6 +208,9 @@ func TestForwardFollowsResolvedFamily(t *testing.T) {
 		t.Fatal("forward/check target differs", conn.forwards, e.Snapshot())
 	}
 	conn.target = "127.0.0.1"
+	if err := e.RequestPortRefresh(); err != nil {
+		t.Fatal(err)
+	}
 	e.cycle(context.Background(), 1)
 	if len(conn.forwards) != 3 || !conn.removes[1] || conn.forwards[1].Endpoint.RemoteHost != "::1" || conn.removes[2] || conn.forwards[2].Endpoint.RemoteHost != "127.0.0.1" {
 		t.Fatal("family change did not retarget owned forward", conn)
@@ -253,6 +256,9 @@ func TestRetargetFailureInvalidatesReadyAndPublishes(t *testing.T) {
 	e.cycle(context.Background(), 1)
 	conn.target = "127.0.0.1"
 	conn.cancelError = true
+	if err := e.RequestPortRefresh(); err != nil {
+		t.Fatal(err)
+	}
 	e.cycle(context.Background(), 1)
 	if state := e.Snapshot(); state.Ports[0].Reachable || state.Ports[0].Status == "ready" || !published {
 		t.Fatal("failed tunnel remained ready or not published", state, published)

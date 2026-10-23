@@ -234,6 +234,9 @@ func TestConflictTargetChangeRetriesImmediately(t *testing.T) {
 	e.cycle(context.Background(), 1)
 	c.target = "::1"
 	c.fail = false
+	if err := e.RequestPortRefresh(); err != nil {
+		t.Fatal(err)
+	}
 	e.cycle(context.Background(), 1)
 	if c.calls[p.ID] != 2 || e.Snapshot().Ports[0].Status != "ready" {
 		t.Fatal("target change stuck in old backoff", c.calls, e.Snapshot())
@@ -290,6 +293,8 @@ func TestStateCacheDoesNotDropFailedWrite(t *testing.T) {
 }
 func TestExpirySaveFailureCanRecover(t *testing.T) {
 	e := idleEngine(t)
+	now := time.Now()
+	e.now = func() time.Time { return now }
 	enqueueFixture(t, e)
 	e.state.Jobs[0].CreatedAt = time.Now().Add(-time.Hour)
 	path := filepath.Join(e.store.Root, "jobs.json")
@@ -306,6 +311,11 @@ func TestExpirySaveFailureCanRecover(t *testing.T) {
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
+	e.sendNext(context.Background(), 1)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("expiry write retried before backoff")
+	}
+	now = now.Add(time.Minute)
 	e.sendNext(context.Background(), 1)
 	data, err := os.ReadFile(path)
 	if err != nil {

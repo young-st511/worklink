@@ -88,6 +88,7 @@ s.shutdown();s.server_close();thread.join()
         send("save_config", config=config)
         saved = wait(lambda e: e.get("id") == "save_config")
         assert not saved.get("error"), saved
+        send("environment", available=True, low_power=False)
         send("toggle", on=True)
         wait(lambda e: e.get("state") and any(p["status"]=="ready" for p in e["state"]["ports"]))
         import urllib.request

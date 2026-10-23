@@ -252,3 +252,16 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 - `go test -race ./...`, `go vet ./...`, native self-test와 밝은/어두운 cleanup popup AppKit offscreen 렌더를 검증했습니다. 기존 입력/cursor/IME·원본 클립보드·고정 팝업 회귀를 유지합니다. 실제 제품 마우스 조작은 수행하지 않았고 기존 CUA 거부를 우회하지 않았습니다.
 - 최종 빌드로 실제 SSH 임시 fixture에서 기존 파일 batch(한글/동일 basename/빈 파일/원본 SHA/경로 재복사), 캡처 원본/ACK/원본 복사 양쪽 모드, v4→v6→v4 tunnel/title/OFF 회귀를 통과했습니다. 일일 정리 날짜·저장 실패·forward 경계 자체는 fake-clock/connection 테스트이며 실제 사용자 등록을 삭제하는 실험은 하지 않았습니다.
 - `/Applications/Worklink.app`를 원자적으로 교체하고 앱 서명·주요 실행파일/리소스 SHA256을 검증했습니다. 기존 설정의 정책은 OFF로 유지하며 제품 앱은 자동 재시작하지 않았습니다.
+
+
+## 2026-10-23: 이동 중 네트워크·저전력 정책 (S37)
+
+- 일반5초/저전력30초/등록 포트 없는 대상60초 확인을 fake-clock/call-count로 검증했습니다. OFF·무경로는 timer 없는 이벤트 대기이며, 차단된 호스트의 대기 이미지는 온라인에서 만료 deadline을 유지하고 저장 실패는1분 뒤 재시도합니다. 수동 새로고침100회는2초 제한으로 합치며 재연결 대기와 recovery floor를 우회하지 않습니다.
+- 경로 미확인 상태의 제품 코어 시작, 무경로 새 연결0회, loss의 진행 RPC/장기 transport 취소, 저전력 변화의 SSH·generation 유지, 이전 세대 guard, blocked/backoff 원인 보존을 검사했습니다. 이미지 exists RPC 도중 단절→같은ID·로컬원본 유지→복구 뒤 SHA/ACK 완료와 큐 회수를 검증했습니다. loss 직후 sendNext 시작 경합은 Red 재현 후 초기 mutex guard로 수정했습니다.
+- 순수 native recovery gate에서 중복 이벤트100회·단절·오래된 token·OFF/재시작 콜백을 검사했습니다. NWPathMonitor는 업무 ON·비잠금/비절전에서만 시작하며 false 즉시/true3초 안정화 뒤 전달합니다. 중복 전원 알림을 생략하고 fatal core 종료 시 monitor/observer를 회수합니다. 전역 사용자 입력 감시와 추가 polling은 없습니다.
+- 두 독립 스펙/코드 리뷰의 장기 SSH context 취소, 만료 저장 실패의 반복 루프, 손실 직전 전송 시작 경합 등을 수정하고 회귀를 추가했습니다. 전체 `go test -race ./...`·`go vet ./...`, native self-test, 아이콘·서명·plist·diff 검사를 통과했습니다.
+- 최종 앱의 실제 SSH 임시 fixture에서 v4→v6→v4 tunnel/title/OFF, 일반파일 batch 원본 SHA/한글/동일 basename/빈 파일/경로 재복사, 캡처 원본 SHA/ACK/큐 삭제/원본 다운로드를 통과했습니다. native named pasteboard의 원본 유지/자동 경로 복사 양쪽 모드에서 수동 경로·원본 복사/재업로드 방지/scratch 삭제도 통과했습니다.
+- 네트워크 대기·저전력 상태의 light/dark AppKit offscreen PNG 4개를 열어 상태 안내·새로고침/포트 활성화와 고정 레이아웃을 확인했습니다. 실제 제품 Wi-Fi·잠금·절전·마우스를 조작하지 않았고 기존 CUA 접근 거부를 우회하지 않았습니다. 실제 배터리 절감률과 가방 안 전체 시스템 전력은 측정하지 않았습니다.
+- API 근거: Apple [NWPathMonitor](https://developer.apple.com/documentation/network/nwpathmonitor), [isLowPowerModeEnabled](https://developer.apple.com/documentation/foundation/processinfo/islowpowermodeenabled). 네트워크 경로와 원격 Tailscale/SSH 도달성은 별도로 판단하며 경로 이벤트가 기존 backoff를 초기화하지 않습니다.
+
+- `/Applications/Worklink.app`를 원자 교체하고 서명 및 주요7개 실행파일/리소스 SHA256 일치를 확인했습니다. 사용자 설정과 원격 운영 헬퍼는 변경하지 않았으며 제품 앱은 자동 재시작하지 않았습니다.

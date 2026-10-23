@@ -124,7 +124,7 @@ func (e *Engine) trimInactive(c model.Config) (model.Config, *model.Port, error)
 		}
 	}
 	if candidate < 0 {
-		return c, nil, errors.New("서버 16개가 모두 활성·고정·중지 또는 미확인 상태입니다. 업무 ON에서 비활성 상태를 확인하거나 항목을 직접 제거해 주세요")
+		return c, nil, errors.New("서버 16개가 모두 활성·고정·중지 또는 미확인 상태입니다. 서버 상태 새로고침 후 다시 등록하거나 항목을 직접 제거해 주세요")
 	}
 	removed := e.state.Config.Ports[candidate]
 	ports := make([]model.Port, 0, 16)

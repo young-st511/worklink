@@ -45,6 +45,7 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   var copyFile: ((FileTransfer) -> Void)?
   var undoPortCleanup: (() -> Void)?
   var pinPort: ((PortConfig) -> Void)?
+  var refreshPorts: (() -> Void)?
   var toggle: (() -> Void)?
   var settings: (() -> Void)?
   var quit: (() -> Void)?
@@ -245,6 +246,12 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
         sections.append(label("\(host.host) · \(error)", size: 11, color: .systemRed))
       }
     }
+    if state.on && state.networkUnavailable == true {
+      sections.append(label("네트워크 연결 대기 · 연결 시도를 쉬고 있습니다.", size: 10, color: .secondaryLabelColor))
+    } else if state.on && state.lowPower == true {
+      sections.append(
+        label("저전력 모드 · 서버 상태는 30초 간격으로 확인합니다.", size: 10, color: .secondaryLabelColor))
+    }
     sections.append(separator())
     let imageTitle = label(
       "최근 이미지 · \(state.config.imageHost.isEmpty ? "전송 대상 미선택" : state.config.imageHost)",
@@ -357,8 +364,20 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
     manage.contentTintColor = .secondaryLabelColor
     manage.toolTip = "서버 이름·로컬 포트·SSH 대상 설정"
     let headingSpace = NSView()
+    let refresh = ActionButton("서버 상태 새로고침") { [weak self] in self?.refreshPorts?() }
+    refresh.image = NSImage(
+      systemSymbolName: "arrow.clockwise", accessibilityDescription: refresh.title)
+    refresh.imagePosition = .imageOnly
+    refresh.isBordered = false
+    refresh.widthAnchor.constraint(equalToConstant: 22).isActive = true
+    refresh.heightAnchor.constraint(equalToConstant: 18).isActive = true
+    refresh.setAccessibilityLabel(refresh.title)
+    refresh.setDisabledReason(
+      !state.on ? "업무 모드를 켜 주세요." : state.networkUnavailable == true ? "네트워크 연결을 기다려 주세요." : nil)
+    if refresh.isEnabled { refresh.toolTip = "등록 서버를 한 번 확인합니다. 연속 요청과 SSH 재시도 대기시간을 유지합니다." }
     let serverHeading = horizontal([
-      label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true), headingSpace, manage,
+      label("개발 서버", size: 11, color: .secondaryLabelColor, bold: true), headingSpace, refresh,
+      manage,
     ])
     serverHeading.distribution = .fill
     serverHeading.widthAnchor.constraint(equalToConstant: 344).isActive = true
@@ -460,7 +479,8 @@ final class DashboardController: NSViewController, NSTextFieldDelegate {
   private func compactPortRow(_ port: PortConfig, state: CoreState) -> NSView {
     let connection = state.ports.first { $0.id == port.id }
     let ready =
-      state.on && port.enabled && connection?.status == "ready" && connection?.reachable == true
+      state.on && state.networkUnavailable != true && port.enabled && connection?.status == "ready"
+      && connection?.reachable == true
     let status =
       !state.on
       ? "OFF" : !port.enabled ? "중지" : connection?.status == "conflict" ? "충돌" : ready ? "연결" : "대기"

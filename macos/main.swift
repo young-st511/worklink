@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   var desiredOn = false
   var suspension = SuspensionTracker()
   var suspended: Bool { suspension.active }
+  var environmentMonitor: NetworkPowerMonitor?
   var timer: Timer?
   var lastCount = 0
   var captureBusy = false
@@ -71,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "pin_port", ["port_id": port.id, "on": port.pinned != true],
         reply: { [weak self] r in self?.result(r) })
     }
+    dashboard.refreshPorts = { [weak self] in
+      self?.bridge.send("refresh_ports", reply: { [weak self] r in self?.result(r) })
+    }
     dashboard.toggle = { [weak self] in self?.toggle() }
     dashboard.settings = { [weak self] in self?.showSettings() }
     dashboard.quit = { NSApp.terminate(nil) }
@@ -93,6 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let self else { return }
       if !bridge.isRunning {
         desiredOn = false
+        environmentMonitor?.stop(notify: false)
+        environmentMonitor = nil
         stopTimer()
       }
       notice("오류 · \(error)")
@@ -107,6 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           domain: "Worklink", code: 1, userInfo: [NSLocalizedDescriptionKey: "번들에 연결 코어가 없습니다"])
       }
       try bridge.start(binary: binary, dataDirectory: root)
+      environmentMonitor = NetworkPowerMonitor { [weak self] available, lowPower in
+        self?.bridge.send("environment", ["available": available, "low_power": lowPower])
+      }
     } catch { notice("오류 · \(error.localizedDescription)") }
     let center = NSWorkspace.shared.notificationCenter
     center.addObserver(
@@ -228,11 +237,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       showSettings()
       return
     }
+    if desiredOn && !suspended { environmentMonitor?.start() } else { environmentMonitor?.stop() }
     bridge.send("toggle", ["on": desiredOn && !suspended])
     if !desiredOn { stopTimer() }
     updateIcon()
   }
   func update(_ state: CoreState) {
+    if desiredOn && !suspended { environmentMonitor?.start() } else { environmentMonitor?.stop() }
     if state.on && desiredOn && !suspended && !clipboardBlocked {
       if timer == nil || lastGeneration != state.generation {
         stopTimer()
@@ -261,14 +272,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       state?.hosts.contains(where: { $0.status == "blocked" || $0.status == "backoff" }) == true
       || state?.ports.contains(where: { $0.status == "conflict" }) == true
       || dashboard.notice.hasPrefix("오류")
-    let mode: MenuBarGlyph.Mode = !desiredOn ? .off : suspended ? .paused : problem ? .problem : .on
+    let networkWaiting = state?.networkUnavailable == true
+    let mode: MenuBarGlyph.Mode =
+      !desiredOn ? .off : suspended || networkWaiting ? .paused : problem ? .problem : .on
     let preservesImage = clipboardPreferences.preservesImage
     item.button?.image = MenuBarGlyph.image(for: mode, preservesImage: preservesImage)
     item.button?.alphaValue = desiredOn ? 1 : 0.65
     let status =
-      suspended ? "잠금/절전 일시 정지" : !desiredOn ? "업무 OFF" : problem ? "연결 또는 전송 오류" : "업무 ON"
+      suspended
+      ? "잠금/절전 일시 정지"
+      : !desiredOn ? "업무 OFF" : networkWaiting ? "네트워크 연결 대기" : problem ? "연결 또는 전송 오류" : "업무 ON"
+    let powerMode = state?.lowPower == true ? " · 저전력 모드" : ""
     let clipboardMode = preservesImage ? "캡처 원본 유지" : "원격 경로 자동 복사"
-    item.button?.toolTip = "Worklink · \(status) · \(clipboardMode) · 좌클릭 목록 / 우클릭 전환"
+    item.button?.toolTip = "Worklink · \(status)\(powerMode) · \(clipboardMode) · 좌클릭 목록 / 우클릭 전환"
     item.button?.setAccessibilityLabel("Worklink")
     item.button?.setAccessibilityValue("\(status) · \(clipboardMode)")
     item.button?.setAccessibilityHelp("좌클릭으로 목록을 열고 우클릭으로 업무 모드를 전환합니다.")
@@ -370,6 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let bytes = try Data(contentsOf: path, options: .mappedIfSafe)
           let allowed =
             desiredOn && !suspended && bridge.state?.on == true
+            && bridge.state?.networkUnavailable != true
             && bridge.state?.generation == generation
           guard
             ClipboardReader.restore(
@@ -400,6 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let path = r["result"] as? String else { return }
         let allowed =
           desiredOn && !suspended && bridge.state?.on == true
+          && bridge.state?.networkUnavailable != true
           && bridge.state?.generation == generation
         guard
           ClipboardReader.replaceWithPath(
@@ -419,7 +437,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       notice("업무 모드를 켜 주세요. 우클릭으로 전환할 수 있습니다.")
       return
     }
-    guard let status = bridge.state?.ports.first(where: { $0.id == port.id }),
+    guard bridge.state?.networkUnavailable != true,
+      let status = bridge.state?.ports.first(where: { $0.id == port.id }),
       status.status == "ready", let url = port.endpoint.localURL(port.localPort)
     else {
       notice("서버가 아직 준비되지 않았습니다. 포트 상태와 연결을 확인해 주세요.")
@@ -471,6 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     suspension.pause(reason)
     stopTimer()
     if desiredOn { bridge.send("toggle", ["on": false]) }
+    environmentMonitor?.stop()
     notice("잠금/절전 중 감시를 멈췄습니다.")
   }
   @objc func resume(_ notification: Notification) {
@@ -482,11 +502,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     suspension.resume(reason)
     if wasSuspended && !suspended {
       lastCount = clipboardBoard.changeCount
-      if desiredOn { bridge.send("toggle", ["on": true]) }
+      if desiredOn {
+        environmentMonitor?.start()
+        bridge.send("toggle", ["on": true])
+      }
     }
     updateIcon()
   }
   func applicationWillTerminate(_ notification: Notification) {
+    environmentMonitor?.stop(notify: false)
     stopTimer()
     bridge.stop()
   }

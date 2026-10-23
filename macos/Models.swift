@@ -123,6 +123,8 @@ struct FileTransfer: Codable {
   var error: String?
 }
 struct CoreState: Codable {
+  var networkUnavailable: Bool? = nil
+  var lowPower: Bool? = nil
   var files: [FileTransfer]? = nil
   var on: Bool
   var generation: UInt64

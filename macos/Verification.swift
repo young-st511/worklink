@@ -51,7 +51,9 @@ func renderPreviews(_ directory: URL) throws {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   for style in [NSAppearance.Name.aqua, .darkAqua] {
     let appearance = NSAppearance(named: style)!
-    for name in ["off", "on", "error", "keep", "images", "files", "cleanup"] {
+    for name in [
+      "off", "on", "error", "keep", "images", "files", "cleanup", "offline", "low-power",
+    ] {
       let controller = DashboardController()
       controller.view.appearance = appearance
       var state = fixtureState(on: name != "off")
@@ -67,6 +69,8 @@ func renderPreviews(_ directory: URL) throws {
         state.config.ports = []
         state.jobs = Array(repeating: state.jobs[0], count: 5)
       }
+      if name == "offline" { state.networkUnavailable = true }
+      if name == "low-power" { state.lowPower = true }
       if name == "cleanup" {
         state.config.portCleanupEnabled = true
         state.config.portCleanupDays = 7
@@ -250,6 +254,7 @@ func renderPreviews(_ directory: URL) throws {
 func nativeSelfTest() throws {
   try nativeFileSelfTest()
   try nativeCleanupSelfTest()
+  try nativeEnvironmentSelfTest()
 
   func require(_ condition: Bool, _ message: String) throws {
     if !condition {
@@ -1262,4 +1267,58 @@ func nativeCleanupSelfTest() throws {
   try check(
     controller.view.frame.size == DashboardController.panelSize, "cleanup changed popup dimensions")
   settings.close()
+}
+
+func nativeEnvironmentSelfTest() throws {
+  func check(_ value: Bool, _ text: String) throws {
+    if !value {
+      throw NSError(domain: "Environment QA", code: 1, userInfo: [NSLocalizedDescriptionKey: text])
+    }
+  }
+  var gate = NetworkRecoveryGate()
+  gate.start()
+  let first = gate.receive(true)!
+  for _ in 0..<100 { try check(gate.receive(true) == nil, "duplicate recovery scheduled") }
+  _ = gate.receive(false)
+  try check(!gate.complete(first) && !gate.available, "flap restored network")
+  let next = gate.receive(true)!
+  gate.stop()
+  try check(!gate.complete(next), "OFF restored by stale callback")
+  gate.start()
+  try check(!gate.complete(next), "old monitor callback restored new session")
+  let stable = gate.receive(true)!
+  try check(gate.complete(stable) && gate.available, "stable path not accepted")
+  var low = false
+  var events: [String] = []
+  let monitor = NetworkPowerMonitor(paths: false, lowPower: { low }) { available, power in
+    events.append("\(available):\(power)")
+  }
+  monitor.start()
+  monitor.handlePath(true)
+  monitor.handlePath(true)
+  try check(events == ["false:false"], "unstable path emitted available")
+  monitor.stop()
+  low = true
+  monitor.publish()
+  monitor.publish()
+  try check(events == ["false:false", "false:true"], "power state not deduplicated")
+  var state = fixtureState()
+  state.networkUnavailable = true
+  let controller = DashboardController()
+  controller.render(state)
+  func buttons(_ view: NSView) -> [ActionButton] {
+    (view as? ActionButton).map { [$0] } ?? view.subviews.flatMap { buttons($0) }
+  }
+  try check(
+    buttons(controller.view).first { $0.title == "서버 상태 새로고침" }?.isEnabled == false,
+    "offline refresh enabled")
+  state.networkUnavailable = false
+  state.lowPower = true
+  var refresh = false
+  controller.refreshPorts = { refresh = true }
+  controller.render(state)
+  buttons(controller.view).first { $0.title == "서버 상태 새로고침" }?.performClick(nil)
+  try check(
+    refresh && controller.view.frame.size == DashboardController.panelSize,
+    "power policy changed panel or refresh callback")
 }

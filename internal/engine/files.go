@@ -107,7 +107,7 @@ func (e *Engine) SendFiles(paths []string) (completed []model.File, err error) {
 	gen := e.state.Generation
 	p := e.peers[host]
 	session := e.session
-	ready := e.state.On && session != nil
+	ready := e.state.On && !e.state.NetworkUnavailable && session != nil
 	connected := false
 	for _, h := range e.state.Hosts {
 		if h.Host == host && h.Status == "connected" {
@@ -123,7 +123,9 @@ func (e *Engine) SendFiles(paths []string) (completed []model.File, err error) {
 	if !ok {
 		return nil, errors.New("원격 파일 전송을 지원하지 않는 연결입니다")
 	}
-	ctx, cancel := context.WithTimeout(session, 10*time.Minute)
+	network, stopNetwork := e.onlineContext(session)
+	defer stopNetwork()
+	ctx, cancel := context.WithTimeout(network, 10*time.Minute)
 	defer cancel()
 	e.mu.Lock()
 	e.fileCancel = cancel
@@ -262,7 +264,7 @@ func (e *Engine) CopyFilePath(id string) (string, error) {
 		}
 	}
 	p := e.peers[f.Host]
-	on := e.state.On
+	on := e.state.On && !e.state.NetworkUnavailable
 	gen := e.state.Generation
 	e.mu.Unlock()
 	if !on || f.Status != "complete" || p == nil {
@@ -272,7 +274,9 @@ func (e *Engine) CopyFilePath(id string) (string, error) {
 	if conn == nil {
 		return "", errors.New("원격 연결이 끊겼습니다")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	network, stopNetwork := e.onlineContext(context.Background())
+	defer stopNetwork()
+	ctx, cancel := context.WithTimeout(network, 5*time.Second)
 	defer cancel()
 	res, err := conn.Call(ctx, remote.Request{Op: "file_exists", ID: id}, nil)
 	if err != nil {
