@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   let popover = NSPopover()
   var item: NSStatusItem!
   var statusInput: StatusFileDropView?
+  var statusRightEvents: StatusRightEventRouter?
   var settingsController: SettingsController?
   var desiredOn = false
   var suspension = SuspensionTracker()
@@ -40,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.target = self
     item.button?.action = #selector(statusClicked)
-    item.button?.sendAction(on: [.leftMouseUp, .rightMouseDown, .rightMouseUp])
+    item.button?.sendAction(on: [.leftMouseUp])
     if let button = item.button {
       let drop = StatusFileDropView(frame: button.bounds)
       drop.autoresizingMask = [.width, .height]
@@ -53,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       statusInput = drop
       button.addSubview(drop)
+      statusRightEvents = StatusRightEventRouter(view: drop)
     }
     NSApp.servicesProvider = self
     NSUpdateDynamicServices()
@@ -104,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard let self else { return }
       if !bridge.isRunning {
         desiredOn = false
+        statusRightEvents?.cancel()
         environmentMonitor?.stop(notify: false)
         environmentMonitor = nil
         stopTimer()
@@ -148,11 +151,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     afterLaunch?()
   }
   @objc func statusClicked() {
-    switch NSApp.currentEvent?.type {
-    case .rightMouseDown: statusInput?.rightPress.begin()
-    case .rightMouseUp: statusInput?.rightPress.end()
-    default: showMenu()
-    }
+    // Right events are consumed by the local router before button tracking.
+    guard NSApp.currentEvent?.type != .rightMouseDown,
+      NSApp.currentEvent?.type != .rightMouseUp else { return }
+    showMenu()
   }
   func showMenu() {
     guard let button = item.button else { return }
@@ -498,6 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       notification.name == NSWorkspace.willSleepNotification
       ? "sleep"
       : notification.name == NSWorkspace.sessionDidResignActiveNotification ? "session" : "lock"
+    statusRightEvents?.cancel()
     statusInput?.rightPress.cancel()
     suspension.pause(reason)
     stopTimer()
@@ -522,6 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updateIcon()
   }
   func applicationWillTerminate(_ notification: Notification) {
+    statusRightEvents?.stop()
     statusInput?.rightPress.cancel()
     environmentMonitor?.stop(notify: false)
     stopTimer()

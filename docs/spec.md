@@ -126,3 +126,8 @@ S37 구현: `NetworkRecoveryGate/NetworkPowerMonitor`, `AppDelegate`의 업무·
 
 
 S38 구현: `RightClickHold`의0.5초 단발 common-mode timer/token, `StatusFileDropView`의 down/up/drag·뷰 제거 취소, `AppDelegate`의 모드 setter·잠금/절전/종료 취소를 연결했습니다. threshold에서 현재 우클릭 버튼과 아이콘 내 포인터를 한 번 확인하고, 긴 동작 뒤 release는 소비합니다. 업무 OFF에서도 다음 작업을 위한 모드 전환은 가능하며 잠금/절전 중에는 실행하지 않습니다. 전환은 현재 클립보드를 바꾸지 않습니다.
+
+- S39: 메뉴바의 우클릭 raw down/up/drag는 해당 status 창의 아이콘에서 시작한 경우에만 앱 내부 local event router가 버튼 tracking보다 먼저 소비합니다. down은 업무 상태를 바꾸지 않고0.5초 예약만 합니다. 긴 timer 뒤 up은 소비하고 짧은 up에서만 업무를 전환합니다. 다른 창·아이콘 밖에서 시작한 이벤트는 그대로 전달합니다. drag-out/잠금/절전/제거/종료 취소 및 좌클릭/드롭을 유지하고 status button action은 좌클릭만 사용합니다. local monitor는 명시적으로 해제하며 global monitor·추가 polling은 없습니다.
+
+
+S39 구현: `StatusRightEventRouter`가 앱 local monitor에서 자체 status 창/아이콘에서 시작한 우클릭을 소비하고 동일 `RightClickHold`에 전달합니다. `AppDelegate.statusClicked`는 우클릭을 처리하지 않으며 button action mask는 좌클릭뿐입니다. raw 이벤트→local monitor→nil 소비를 `NSApp.sendEvent` offscreen fixture로 검증했습니다. 전역 접근성 권한·global monitor 없이 `stop/deinit`에서 명시적으로 해제합니다. 근거: Apple [addLocalMonitorForEvents](https://developer.apple.com/documentation/appkit/nsevent/addlocalmonitorforevents(matching:handler:))는 앱 이벤트 전달 전 수정/소비를 허용하며 nested control tracking에서 이미 소비된 이벤트는 전달하지 않으므로 down부터 먼저 소비합니다.

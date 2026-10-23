@@ -253,6 +253,7 @@ func renderPreviews(_ directory: URL) throws {
 }
 func nativeSelfTest() throws {
   try nativeRightHoldSelfTest()
+  try nativeStatusRoutingSelfTest()
   try nativeFileSelfTest()
   try nativeCleanupSelfTest()
   try nativeEnvironmentSelfTest()
@@ -1400,4 +1401,62 @@ func nativeRightHoldSelfTest() throws {
   input.viewWillMove(toWindow: nil)
   input.rightMouseUp(with: event(.rightMouseUp))
   try require(right == 1, "detached view retained press")
+}
+
+
+func nativeStatusRoutingSelfTest() throws {
+  func check(_ value: Bool, _ message: String) throws {
+    if !value { throw NSError(domain: "Status routing QA", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: message]) }
+  }
+  let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 24, height: 24),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  let other = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 24, height: 24),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  let view = StatusFileDropView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+  window.contentView = view
+  var short = 0, long = 0
+  var timers: [() -> Void] = []
+  view.rightPress = RightClickHold(short: { short += 1 }, long: { long += 1 }, isHeld: { true },
+    schedule: { _, action in timers.append(action); return {} })
+  let router = StatusRightEventRouter(view: view, install: false)
+  func event(_ type: NSEvent.EventType, outside: Bool = false, foreign: Bool = false) -> NSEvent {
+    NSEvent.mouseEvent(with: type, location: NSPoint(x: outside ? 30 : 12, y: 12),
+      modifierFlags: [], timestamp: 0, windowNumber: foreign ? other.windowNumber : window.windowNumber,
+      context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+  }
+  try check(router.handle(event(.rightMouseDown, foreign: true)) != nil, "foreign down consumed")
+  try check(router.handle(event(.rightMouseDown, outside: true)) != nil, "outside down consumed")
+  try check(router.handle(event(.leftMouseUp)) != nil, "left click consumed")
+  try check(router.handle(event(.rightMouseDown)) == nil && short == 0 && long == 0,
+    "raw down toggled work or escaped to button")
+  timers[0]()
+  try check(long == 1 && short == 0, "raw hold not fired before up")
+  try check(router.handle(event(.rightMouseUp)) == nil && short == 0, "long up toggled work")
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  try check(short == 1 && long == 1, "short raw up not routed once")
+  _ = router.handle(event(.rightMouseDown))
+  try check(router.handle(event(.rightMouseDragged, outside: true)) == nil, "drag escaped")
+  timers[2]()
+  _ = router.handle(event(.rightMouseUp))
+  try check(short == 1 && long == 1, "drag-out/return executed action")
+  _ = router.handle(event(.rightMouseDown))
+  router.cancel()
+  timers[3]()
+  _ = router.handle(event(.rightMouseUp))
+  try check(short == 1 && long == 1, "cancel left action alive")
+  router.stop()
+
+  // Exercise the installed AppKit monitor, not only the extracted handler.
+  let live = StatusRightEventRouter(view: view)
+  let timerCount = timers.count
+  NSApp.sendEvent(event(.rightMouseDown))
+  try check(live.isTracking && timers.count == timerCount + 1 && short == 1,
+    "AppKit raw down bypassed local router")
+  timers.last?()
+  NSApp.sendEvent(event(.rightMouseUp))
+  try check(!live.isTracking && short == 1 && long == 2,
+    "AppKit monitor did not consume long release")
+  live.stop()
 }

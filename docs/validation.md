@@ -277,3 +277,13 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 - `/Applications/Worklink.app`를 원자 교체하고 서명·주요7개 실행파일/리소스 SHA256 일치를 확인했습니다. 제품 앱은 자동 재시작하지 않았습니다.
 
 - 스펙/코드 독립 리뷰에서 추가 blocker 없음입니다. 스펙 리뷰의 최신 native self-test는 통과했으며 코드 리뷰어의 추가 독립 번들 실행은 서버 중단으로 결과를 확인하지 못해 검증 결과에 포함하지 않습니다. 구현 담당자의 최종 native self-test·렌더·설치 검증은 완료됐습니다.
+
+
+## 2026-10-23: 메뉴바 원시 우클릭 라우팅 수정 (S39)
+
+- 사용자가 실제 메뉴바에서 우클릭을 누르자마자 업무가 꺼진다고 보고했습니다. 실행 시각과 설치본을 확인해 구버전 미재시작만으로 설명하지 않았으며, 실제 물리 입력 원인은 직접 재현하지 못했습니다. 버튼 action 기반 우클릭 경로를 제거하고 앱 내부 local event monitor가 해당 status 창/아이콘의 down/up/drag를 먼저 소비하도록 보강했습니다.
+- `StatusRightEventRouter` 미구현 compile 실패 후 구현했습니다. 타 창/아이콘 밖 시작과 좌클릭 통과, down업무0·예약long1·긴up업무0·짧은up1, drag-out취소/재진입·lifecycle취소를 검사합니다. 설치된 local monitor에 offscreen `NSApp.sendEvent`를 보내 capture 상태와 실제 nil 소비에 의한 중복 동작 차단도 확인했습니다. 이전 S38의 핸들러 직접 호출·timer 검사만으로 실제 앱 dispatch까지 검증한 것으로 간주하지 않습니다.
+- 전체 Go race/vet·최종 native self-test·AppKit 렌더·아이콘/서명/plist/diff 검사를 통과했습니다. 기존 모드 setter의 클립보드/generation/레이아웃 보존과 파일 드롭 회귀를 유지합니다. 실제 SSH를 변경하지 않아 이번에는 재실행하지 않았습니다.
+- 실제 메뉴바 물리 입력은 기존 CUA 접근 거부로 미검증이며 우회하지 않았습니다. 따라서 사용자 보고의 물리 재현 완료나 모든 입력 장치에서의 해결을 주장하지 않습니다. 앱은 자동 재시작하지 않습니다.
+
+- 두 독립 리뷰의 최신 임시 앱 번들 native self-test도 통과했습니다. `/Applications/Worklink.app`를 원자 교체하고 서명·주요7개 리소스 SHA256을 확인했습니다.
