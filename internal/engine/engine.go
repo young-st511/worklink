@@ -110,6 +110,9 @@ type portActivity struct {
 }
 
 type Engine struct {
+	closing           bool
+	loopWG            sync.WaitGroup
+	closeWG           sync.WaitGroup
 	networkContext    context.Context
 	networkCancel     context.CancelFunc
 	resetNetwork      bool
@@ -212,7 +215,7 @@ func (e *Engine) queuePath(j Job) string {
 }
 func (e *Engine) SetOn(on bool) {
 	e.mu.Lock()
-	if e.state.On == on {
+	if (on && e.closing) || e.state.On == on {
 		e.mu.Unlock()
 		return
 	}
@@ -234,6 +237,9 @@ func (e *Engine) SetOn(on bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	e.cancel = cancel
 	e.session = ctx
+	if on {
+		e.loopWG.Add(1)
+	}
 	e.mu.Unlock()
 	if oldCancel != nil {
 		oldCancel()
@@ -257,10 +263,26 @@ func (e *Engine) SetOn(on bool) {
 	}
 	wg.Wait()
 	if on {
-		go e.loop(ctx, gen)
+		go func() { defer e.loopWG.Done(); e.loop(ctx, gen) }()
 	} else {
 		cancel()
 	}
+}
+
+// Shutdown drains ownership cleanup before the UI core process exits, including detached peers.
+func (e *Engine) Shutdown() {
+	e.mu.Lock()
+	e.closing = true
+	e.mu.Unlock()
+	e.SetOn(false)
+	e.loopWG.Wait()
+	e.closeWG.Wait()
+}
+
+// Caller holds e.mu, or is a tracked loop, so Shutdown cannot miss an Add.
+func (e *Engine) closeAsyncLocked(conn transport.Connection) {
+	e.closeWG.Add(1)
+	go func() { defer e.closeWG.Done(); conn.Close() }()
 }
 func (e *Engine) SaveConfig(c model.Config) error { _, err := e.saveConfig(c); return err }
 func (e *Engine) saveConfig(c model.Config) (*model.Port, error) {
@@ -471,7 +493,7 @@ func (e *Engine) cycle(ctx context.Context, gen uint64) {
 				stop()
 			}
 			if old != nil {
-				go old.Close()
+				e.closeAsyncLocked(old)
 			}
 			p.recoveryNotBefore = p.lastConnect.Add(30 * time.Second)
 			p.forwarded = map[string]bool{}

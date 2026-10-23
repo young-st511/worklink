@@ -11,6 +11,7 @@ final class RightClickHold {
   private var token: UInt64 = 0
   private var active = false
   private var fired = false
+  var onHoldRejected: (() -> Void)?
 
   init(
     short: @escaping () -> Void, long: @escaping () -> Void,
@@ -35,7 +36,11 @@ final class RightClickHold {
     let current = token
     cancelTimer = schedule(0.5) { [weak self] in
       guard let self, self.active, self.token == current, !self.fired else { return }
-      guard self.isHeld() else { self.cancel(); return }
+      guard self.isHeld() else {
+        self.onHoldRejected?()
+        self.cancel()
+        return
+      }
       self.fired = true
       self.cancelTimer?()
       self.cancelTimer = nil

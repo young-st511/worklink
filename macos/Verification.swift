@@ -254,6 +254,7 @@ func renderPreviews(_ directory: URL) throws {
 func nativeSelfTest() throws {
   try nativeRightHoldSelfTest()
   try nativeStatusRoutingSelfTest()
+  try nativeSecondaryReleaseSelfTest()
   try nativeFileSelfTest()
   try nativeCleanupSelfTest()
   try nativeEnvironmentSelfTest()
@@ -1459,4 +1460,73 @@ func nativeStatusRoutingSelfTest() throws {
   try check(!live.isTracking && short == 1 && long == 2,
     "AppKit monitor did not consume long release")
   live.stop()
+}
+
+
+func nativeSecondaryReleaseSelfTest() throws {
+  func check(_ value: Bool, _ message: String) throws {
+    if !value { throw NSError(domain: "Secondary release QA", code: 1,
+      userInfo: [NSLocalizedDescriptionKey: message]) }
+  }
+  let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 24, height: 24),
+    styleMask: [.borderless], backing: .buffered, defer: false)
+  let view = StatusFileDropView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+  window.contentView = view
+  var buttons = 2, inside = true, short = 0, long = 0
+  var hold: [() -> Void] = [], release: [() -> Void] = []
+  view.rightPress = RightClickHold(short: { short += 1 }, long: { long += 1 },
+    isHeld: { buttons & 2 != 0 && inside },
+    schedule: { _, action in hold.append(action); return {} })
+  let router = StatusRightEventRouter(view: view, install: false,
+    pressedButtons: { buttons }, pointerInside: { inside },
+    schedule: { delay, action in
+      if delay != 1.0 / 30.0 { fatalError("wrong release interval") }
+      release.append(action); return {}
+    })
+  func event(_ type: NSEvent.EventType) -> NSEvent {
+    NSEvent.mouseEvent(with: type, location: NSPoint(x: 12, y: 12), modifierFlags: [],
+      timestamp: 0, windowNumber: window.windowNumber, context: nil,
+      eventNumber: 0, clickCount: 1, pressure: 1)!
+  }
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  try check(short == 0 && router.isTracking && release.count == 1, "synthetic up toggled work")
+  hold[0]()
+  try check(long == 1 && short == 0, "long did not fire while physical button held")
+  buttons = 0
+  release[0]()
+  try check(!router.isTracking && short == 0 && long == 1, "long physical release toggled work")
+  buttons = 2
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  buttons = 0
+  release[1]()
+  hold[1]()
+  try check(short == 1 && long == 1, "short physical release/stale hold failed")
+  buttons = 2
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  inside = false
+  release[2]()
+  hold[2]()
+  try check(short == 1 && long == 1 && !router.isTracking, "pointer escape retained press")
+  inside = true
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  router.cancel()
+  release[3]()
+  try check(release.count == 4 && !router.isTracking, "cancelled watcher rescheduled")
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  for _ in 0..<300 { release.last?() }
+  try check(!router.isTracking && short == 1 && long == 1 && release.count <= 304,
+    "stuck physical button did not stop bounded watcher")
+  _ = router.handle(event(.rightMouseDown))
+  _ = router.handle(event(.rightMouseUp))
+  buttons = 0 // Released just before .5, but long timer is delivered before next release check.
+  hold.last?()
+  release.last?()
+  try check(short == 2 && long == 1 && !router.isTracking,
+    "release just before threshold lost short click")
+  router.stop()
 }

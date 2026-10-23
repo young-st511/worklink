@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"time"
-
-	"github.com/young-st511/worklink/internal/transport"
 )
 
 // SetEnvironment changes runtime hints, never the user's ON intent or a peer's retry budget.
 func (e *Engine) SetEnvironment(available, lowPower bool) {
 	e.mu.Lock()
+	if e.closing {
+		e.mu.Unlock()
+		return
+	}
 	changed := e.state.NetworkUnavailable != !available || e.state.LowPower != lowPower
 	if !changed {
 		e.mu.Unlock()
@@ -19,7 +21,6 @@ func (e *Engine) SetEnvironment(available, lowPower bool) {
 	lost := available == false && !e.state.NetworkUnavailable
 	e.state.NetworkUnavailable = !available
 	e.state.LowPower = lowPower
-	var closeConnections []transport.Connection
 	if lost {
 		if e.networkCancel != nil {
 			e.networkCancel()
@@ -28,7 +29,7 @@ func (e *Engine) SetEnvironment(available, lowPower bool) {
 		e.checkedAt = map[string]time.Time{}
 		for _, p := range e.peers {
 			if conn := p.conn(); conn != nil {
-				closeConnections = append(closeConnections, conn)
+				e.closeAsyncLocked(conn)
 			}
 		}
 		dirty := false
@@ -65,10 +66,6 @@ func (e *Engine) SetEnvironment(available, lowPower bool) {
 		}
 	}
 	e.mu.Unlock()
-	// Close only app-owned connections, once per loss edge. Contexts stop active RPC/streams.
-	for _, conn := range closeConnections {
-		go conn.Close()
-	}
 	e.signalWake()
 	e.publish()
 }

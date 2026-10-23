@@ -131,3 +131,8 @@ S38 구현: `RightClickHold`의0.5초 단발 common-mode timer/token, `StatusFil
 
 
 S39 구현: `StatusRightEventRouter`가 앱 local monitor에서 자체 status 창/아이콘에서 시작한 우클릭을 소비하고 동일 `RightClickHold`에 전달합니다. `AppDelegate.statusClicked`는 우클릭을 처리하지 않으며 button action mask는 좌클릭뿐입니다. raw 이벤트→local monitor→nil 소비를 `NSApp.sendEvent` offscreen fixture로 검증했습니다. 전역 접근성 권한·global monitor 없이 `stop/deinit`에서 명시적으로 해제합니다. 근거: Apple [addLocalMonitorForEvents](https://developer.apple.com/documentation/appkit/nsevent/addlocalmonitorforevents(matching:handler:))는 앱 이벤트 전달 전 수정/소비를 허용하며 nested control tracking에서 이미 소비된 이벤트는 전달하지 않으므로 down부터 먼저 소비합니다.
+
+- S40: right up이 와도 실제 우측 버튼 bit가 눌린 상태라면 합성 release로 취급해 즉시 업무를 바꾸지 않습니다. 이 경우에만30Hz/최대10초 단발 예약으로 실제 놓임을 확인하고, 기존0.5초 long은 누르는 중1회/이후short0, 짧게놓으면short1입니다. 타깃 밖 포인터/drag·취소·잠금·절전·종료·오래된 callback은 실행을 막고 확인 예약을 해제합니다. 일반 down/up은 추가 확인을 예약하지 않습니다. 상시 polling·전역 입력 감시는 없습니다. UI 코어 EOF 종료는 업무와 진행 loop를 중지하고 단절 비동기 소유 Close가 끝나기를 기다린 뒤 반환해 이전 실행의 SSH forward가 남는 경계를 방지합니다. 외부 소유 SSH를 탐색·종료하지 않습니다. 임시 사용자 입력 진단 코드는 최종 제품에서 제거합니다.
+
+
+S40 구현: `StatusRightEventRouter.watchRelease/finishRelease/clearReleaseWatch`는 합성up일 때만30Hz 단발 확인을 예약하고300회·uptime10초 상한, 타깃/창/token/취소를 검사합니다. `RightClickHold.onHoldRejected`는0.5초 타이머가 release watcher보다 먼저 실제놓임을 감지한 경우 내부타깃의 short를 완료하고 이탈은 취소합니다. `Engine.Shutdown/closeAsyncLocked`와 `ServeUI` defer는 새 업무 시작을 막고 기존 loop→비동기소유Close 순서로 drain합니다. fake 순서·실제 앱dispatch·실제SSH 단절EOF 회귀를 검증했습니다. 물리 메뉴바 재확인과 비정상 강제종료 복구는 이 검증과 구분합니다.

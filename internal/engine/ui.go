@@ -79,7 +79,7 @@ func ServeUI(root string, r io.Reader, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer e.SetOn(false)
+	defer e.Shutdown()
 	e.SetEnvironment(false, false)
 	e.publish()
 	scan := bufio.NewScanner(r)

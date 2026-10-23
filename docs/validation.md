@@ -287,3 +287,16 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 - 실제 메뉴바 물리 입력은 기존 CUA 접근 거부로 미검증이며 우회하지 않았습니다. 따라서 사용자 보고의 물리 재현 완료나 모든 입력 장치에서의 해결을 주장하지 않습니다. 앱은 자동 재시작하지 않습니다.
 
 - 두 독립 리뷰의 최신 임시 앱 번들 native self-test도 통과했습니다. `/Applications/Worklink.app`를 원자 교체하고 서명·주요7개 리소스 SHA256을 확인했습니다.
+
+
+## 2026-10-23: 실제 트랙패드 합성 release·종료 후 포트 충돌 (S40)
+
+- 사용자 진단 기록에서 raw right down 직후 약3마이크로초에 right up이 전달되지만 물리 버튼 상태는2(우측 눌림)로 유지되는 것을 확인했습니다. 기존 S38/S39는 이 up을 곧바로 짧은 클릭으로 처리해 업무를 전환했습니다. 실제 원인이 드러나기 전 synthetic-only 검사로 해결을 단정했던 한계를 인정하고 해당 이벤트 순서를 회귀에 추가했습니다. 실제 장치 전체의 동작을 일반화하지 않습니다.
+- 이 합성up에서만 실제 놓임을30Hz 단발 예약으로 확인합니다.300회/uptime10초 상한이며 OFF/잠금/절전/종료/포인터 이탈·창 제거·오래된callback은 중지합니다. 일반클릭·유휴에는 추가 polling이 없습니다. 실제 누르는 동안0.5초 long1회, 놓은뒤short0·짧게놓기short1을 검사합니다.
+- 두 리뷰에서0.5초 직전 실제 놓임을 long timer가 watcher보다 먼저 처리해 short가 유실되는 경계를 독립 재현했습니다. 실제 물리버튼/포인터 fixture와 long→watch 순서의 Red를 확인한 뒤, 내부 실제release는 short 완료하고 이탈은cancel로 분리해 수정했습니다. 독립 native 번들 전체 self-test와 engine race/vet 재리뷰를 통과했습니다.
+- 포트 충돌은 이전 실행에서 남은 Worklink 전용 master2개가 포트를 점유하는 것으로 확인했습니다. 부모PID1·전용 임시socket·소유UID·실행옵션을 확인하고 해당 socket의 `ssh -O exit`만 실행해 정리했습니다. 사용자 SSH 설정/타 프로세스/원격 서버를 변경하거나 종료하지 않았습니다. 이후 현재 앱의 소유 master가 포트를 다시 점유하는 것으로 복구를 확인했습니다.
+- 네트워크 loss가 peer를 detach한 뒤 비동기Close가 끝나기 전에 UI 코어가 종료할 수 있는 경계를 보완했습니다. 연결 중 loop·detached Close가 끝날 때까지 Shutdown이 기다리는 Red→race 회귀와 종료뒤ON거부를 검사합니다. 실제 SSH 임시fixture에서 OFF→ON→무경로→stdin EOF로 코어를 종료하고 미리 캡처한 소유 SSH 자식 PID가 모두 사라지는 것을 확인했습니다.
+- 전체 Go race/vet·최종 native self-test·아이콘/서명/plist/diff·AppKit 렌더를 통과했습니다. 실제 SSH의 기존 tunnel v4/v6 전환·원본SHA/ACK/큐회수·일반파일batch·두 native클립보드모드 회귀도 통과했습니다. 임시 진단 코드를 최종 소스/앱에서 제거했으며 진단 원문은 커밋하지 않습니다.
+- 실제 메뉴바에서 수정 후 물리 입력을 다시 누르는 동작은 미검증입니다. 기존 CUA 거부를 우회하지 않았고 앱은 자동 재시작하지 않습니다. 이 보완은 정상 UI 코어 EOF 종료를 다루며 SIGKILL·OS 강제종료 후 자동 orphan 탐색은 포함하지 않습니다.
+
+- 최종 `/Applications/Worklink.app`를 원자 교체하고 주요7개 리소스 SHA256·서명을 확인했습니다. 임시 진단 원문 파일도 제거했습니다. 이전 실행의 연결을 정리하려면 이번 업데이트에서는 팝업 업무OFF 뒤 종료·재실행합니다.

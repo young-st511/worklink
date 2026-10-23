@@ -147,8 +147,25 @@ s.shutdown();s.server_close();thread.join()
         print(json.dumps(dict(explicit_file_batch=True, original_file_sha256=True, unicode_name=True, duplicate_basename=True, empty_file=True, file_path_recopy=True)))
         send("toggle", on=False)
         wait(lambda e: e.get("state") and not e["state"]["on"])
+        send("toggle", on=True)
+        wait(lambda e: e.get("state") and any(h["status"]=="connected" for h in e["state"]["hosts"]))
+        children = subprocess.check_output(["ps", "-axo", "pid=,ppid=,comm="], text=True)
+        owned = [int(parts[0]) for line in children.splitlines()
+                 if len(parts := line.split(None, 2)) == 3 and int(parts[1]) == app.pid
+                 and parts[2] == "/usr/bin/ssh"]
+        assert owned, "No SSH children found for shutdown regression"
+        send("environment", available=False, low_power=False)
+        wait(lambda e: e.get("state") and e["state"].get("network_unavailable"))
         app.stdin.close();app.wait(timeout=10)
         assert app.returncode==0, app.stderr.read()
+        def alive(pid):
+            try: os.kill(pid, 0); return True
+            except ProcessLookupError: return False
+        deadline = time.monotonic() + 3
+        while any(alive(pid) for pid in owned) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not any(alive(pid) for pid in owned), "Network-loss EOF left owned SSH children"
+        print(json.dumps(dict(network_loss_eof_shutdown=True, owned_ssh_reclaimed=True)))
         if os.environ.get("WORKLINK_QA_NATIVE") == "1":
             source_png = Path('.build/previews/on-light.png').resolve()
             for preserve in (False, True):

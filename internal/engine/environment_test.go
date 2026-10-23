@@ -304,3 +304,67 @@ func TestNetworkLossBeforeSendLeavesJobQueued(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+type slowClosingConnection struct {
+	policyConnection
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (c *slowClosingConnection) Close() {
+	c.once.Do(func() { close(c.started) })
+	<-c.release
+}
+func TestShutdownDrainsDetachedNetworkClose(t *testing.T) {
+	e := idleEngine(t)
+	c := &slowClosingConnection{started: make(chan struct{}), release: make(chan struct{})}
+	e.peers["offline"] = &peer{connection: c}
+	e.SetEnvironment(false, false)
+	<-c.started
+	e.cycle(context.Background(), 1) // loss already detached the peer before EOF
+	done := make(chan struct{})
+	go func() { e.Shutdown(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("shutdown returned with owned SSH close still running")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(c.release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not drain owned close")
+	}
+	e.SetOn(true)
+	if e.Snapshot().On {
+		t.Fatal("shutdown engine restarted")
+	}
+}
+func TestShutdownWaitsForConnectingLoop(t *testing.T) {
+	e := idleEngine(t)
+	e.state.On = false
+	started := make(chan struct{})
+	release := make(chan struct{})
+	e.connect = func(ctx context.Context, _ model.Host) (transport.Connection, error) {
+		close(started)
+		<-ctx.Done()
+		<-release
+		return nil, ctx.Err()
+	}
+	e.SetOn(true)
+	<-started
+	done := make(chan struct{})
+	go func() { e.Shutdown(); close(done) }()
+	select {
+	case <-done:
+		t.Fatal("shutdown did not drain connection attempt")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("shutdown blocked")
+	}
+}
