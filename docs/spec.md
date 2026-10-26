@@ -139,3 +139,8 @@ S40 구현: `StatusRightEventRouter.watchRelease/finishRelease/clearReleaseWatch
 
 
 - S41 구현: `AppDelegate.updateIcon`은 네트워크 연결 대기만으로 메뉴바 glyph를 바꾸지 않습니다. 업무ON 기본 체인·원본 유지 사진 배지는 유지하고, `Ⅱ`는 잠금/절전 suspension일 때만 표시합니다. 대기 사유는 기존 팝업·툴팁/접근성 설명에서 확인하며 실제 오류 표시는 유지합니다. 네트워크 안정화/재시도·클립보드 동작은 바꾸지 않습니다.
+
+- S42: 메뉴바 긴 우클릭은 모드를 전환한 뒤 현재 이미지 SSH 대상의 최신 캡처를 새 모드에 맞춰 바로 클립보드에 준비합니다(원본 유지ON=원본byte, OFF=서버 존재를 확인한 원격경로). 팝업 체크는 설정만 바꿉니다. 최신 캡처가 미완료/만료/없음이면 더 오래된 이미지를 대신 복사하지 않습니다. 업무OFF/잠금/무경로에서는 설정만 바꾸고 통신하지 않습니다. 기존 수동 원본/경로 RPC·원본무변형/scratch정리/lastCount재업로드방지와 clipboard changeCount·generation guard를 재사용합니다. 추가 모드 revision·대상·최신ID guard로 재전환/새캡처/대상변경 후 오래된 결과가 덮어쓰지 않게 합니다. 연속 전환은 진행 요청이 끝난 뒤 가장 최근 요청만 실행하고, 뒤에 다른 내용을 복사했다면 예약도 생략합니다. 추가 polling/상주프로세스/자동재전송은 없습니다.
+
+
+S42 구현: `AppDelegate.toggleClipboardModeFromStatusItem/processModeClipboard`, `ModeClipboardRequest`와 기존 `restore/copy`의 permitted/finished를 사용합니다. 원본 요청은 직렬화하고 mode revision·현재host/latestID·generation·clipboardcount가 유지될 때만 반영합니다. `hasPendingCapture/unregisteredCaptureCount/settleCaptureRegistration`은1초 감시 전 새이미지·등록중·reply/state틈·읽기/용량/스테이징/등록실패를 보호합니다. 현재 보드count가 바뀌거나 정확한 등록jobID가snapshot에 보일 때만 marker를 해제합니다. 전송 중 새캡처는 기존 observer/completion이 현재모드로 처리하며 과거완료항목으로 대체하지 않습니다. native named pasteboard와 실제SSH로 양방향/연속전환/새복사보호/재업로드없음을 확인했습니다.

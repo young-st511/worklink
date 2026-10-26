@@ -16,9 +16,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   var timer: Timer?
   var lastCount = 0
   var captureBusy = false
+  var unregisteredCaptureCount: Int?
+  var captureAwaitingJobID: String?
   var afterLaunch: (() -> Void)?
   var lastGeneration: UInt64 = 0
   var clipboardBlocked = false
+  var clipboardModeRevision: UInt64 = 0
+  var pendingModeClipboard: ModeClipboardRequest?
+  var modeClipboardBusy = false
   lazy var clipboardPreferences = ClipboardPreferences(
     defaults: dev ? UserDefaults(suiteName: "dev.worklink.development")! : .standard)
   var clipboardBoard: NSPasteboard = .general
@@ -49,8 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       drop.clicked = { [weak self] in self?.showMenu() }
       drop.rightClicked = { [weak self] in self?.toggle() }
       drop.rightHeld = { [weak self] in
-        guard let self, !self.suspended else { return }
-        self.setClipboardMode(!self.clipboardPreferences.preservesImage)
+        self?.toggleClipboardModeFromStatusItem()
       }
       statusInput = drop
       button.addSubview(drop)
@@ -168,6 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
   }
   func setClipboardMode(_ on: Bool) {
+    clipboardModeRevision &+= 1
+    pendingModeClipboard = nil
     clipboardPreferences.preservesImage = on
     dashboard.preservesImage = on
     updateIcon()
@@ -256,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     updateIcon()
   }
   func update(_ state: CoreState) {
+    settleCaptureRegistration(in: state)
     if desiredOn && !suspended { environmentMonitor?.start() } else { environmentMonitor?.stop() }
     if state.on && desiredOn && !suspended && !clipboardBlocked {
       if timer == nil || lastGeneration != state.generation {
@@ -318,6 +325,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if count == lastCount { return }
     lastCount = count
     if dashboard.clearCopiedIfChanged(count), popover.isShown { dashboard.render(state) }
+    let offered = board.types ?? []
+    if !offered.contains(.fileURL), !offered.contains(.init("NSFilenamesPboardType")),
+      ClipboardReader.types.contains(where: { offered.contains($0.0) }) {
+      // Keep a fresh image protected even when reading, size validation, staging or registration fails.
+      unregisteredCaptureCount = count
+      captureAwaitingJobID = nil
+    }
     autoreleasepool {
       do {
         guard
@@ -327,12 +341,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         try snapshot.bytes.write(to: path, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
         captureBusy = true
+        unregisteredCaptureCount = snapshot.count
+        captureAwaitingJobID = nil
         bridge.send(
           "upload",
           ["path": path.path, "extension": snapshot.ext, "clipboard_count": snapshot.count],
           reply: { [weak self] r in
             try? FileManager.default.removeItem(at: path)
             self?.captureBusy = false
+            if let self, unregisteredCaptureCount == snapshot.count {
+              if r["error"] != nil {
+                captureAwaitingJobID = nil
+              } else if let replyJob = r["job"] as? [String: Any], let id = replyJob["id"] as? String {
+                captureAwaitingJobID = id
+                if let state = bridge.state { settleCaptureRegistration(in: state) }
+              }
+            }
             self?.result(r)
           })
         notice("원본 이미지 전송 중…")
@@ -371,11 +395,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       notice("전송 완료 · 클립보드나 업무 상태가 바뀌어 경로 복사를 생략했습니다.")
     }
   }
-  func restore(_ job: ImageJob) {
+  func restore(
+    _ job: ImageJob, permitted: @escaping () -> Bool = { true },
+    finished: @escaping () -> Void = {}
+  ) {
     guard dashboard.restoring == nil, desiredOn, !suspended, let state = bridge.state, state.on
-    else { return }
+    else { finished(); return }
     let count = clipboardBoard.changeCount
     let generation = state.generation
+    let modeRevision = clipboardModeRevision
     dashboard.restoring = job.id
     notice("원본 이미지 가져오는 중…")
     bridge.send(
@@ -383,9 +411,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       reply: { [weak self] response in
         let result = response["result"] as? [String: Any]
         let path = (result?["path"] as? String).map { URL(fileURLWithPath: $0) }
-        defer { if let path { try? FileManager.default.removeItem(at: path) } }
+        defer {
+          if let path { try? FileManager.default.removeItem(at: path) }
+          finished()
+          self?.processModeClipboard()
+        }
         guard let self else { return }
         dashboard.restoring = nil
+        guard clipboardModeRevision == modeRevision, permitted() else {
+          if dashboard.notice == "원본 이미지 가져오는 중…" {
+            notice("상태가 바뀌어 원본 복사를 생략했습니다.")
+          }
+          return
+        }
         if let error = response["error"] as? String {
           if error.contains("만료") { dashboard.expired.insert(job.id) }
           notice("오류 · \(error)")
@@ -415,13 +453,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { notice("오류 · 원본 복사 실패: \(error.localizedDescription)") }
       })
   }
-  func copy(_ job: ImageJob) {
+  func copy(
+    _ job: ImageJob, permitted: @escaping () -> Bool = { true },
+    finished: @escaping () -> Void = {}
+  ) {
+    let modeRevision = clipboardModeRevision
     let count = clipboardBoard.changeCount
     let generation = bridge.state?.generation
     bridge.send(
       "copy_path", ["job_id": job.id],
       reply: { [weak self] r in
-        guard let self else { return }
+        defer { finished(); self?.processModeClipboard() }
+        guard let self, clipboardModeRevision == modeRevision, permitted() else { return }
         if let error = r["error"] as? String {
           if error.contains("만료") { dashboard.expired.insert(job.id) }
           notice("오류 · \(error)")

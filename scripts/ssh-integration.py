@@ -176,8 +176,10 @@ s.shutdown();s.server_close();thread.join()
                 assert result['path_replaced'] == (not preserve), result
                 assert result['original_preserved'] == preserve, result
                 assert result['manual_path_copied'] and result['original_restored'] and result['restore_no_reupload'] and result['scratch_removed'], result
+                for key in ["hold_original", "hold_path", "rapid_hold", "hold_new_clipboard_preserved"]:
+                    assert result.get(key) is True, result
                 assert result['sha256'] == hashlib.sha256(source_png.read_bytes()).hexdigest(), result
-                print(json.dumps(dict(native_app_pipeline=True, preserve_mode=preserve, original_png_sha256=True, manual_path_copy=True, original_restored=True, restore_no_reupload=True, scratch_removed=True)))
+                print(json.dumps(dict(native_app_pipeline=True, preserve_mode=preserve, original_png_sha256=True, manual_path_copy=True, original_restored=True, restore_no_reupload=True, scratch_removed=True, hold_original=True, hold_path=True, rapid_hold=True, hold_new_clipboard_preserved=True)))
         print(json.dumps(dict(real_ssh=True, tunnel_http=True, remote_family_switch=True, native_loopback_v4_v6=True, title=True, original_sha256=True, local_original_preserved=True, queue_deleted_after_ack=True, remote_path_recopy=True, remote_original_download=True, off_shutdown=True)))
 finally:
     if app and app.poll() is None:

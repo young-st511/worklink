@@ -305,3 +305,14 @@ P2 수정 후 native self-test와 실제 SSH/named pasteboard 두 모드 파이�
 ## 2026-10-23: 네트워크 대기 glyph 숨김 (S41)
 
 네트워크 대기만으로 메뉴바를 일시정지 모양으로 바꾸지 않습니다. 기존 업무ON/원본유지 배지는 유지하고 잠금/절전만 일시정지로 표시하며, 대기는 팝업·툴팁/접근성 설명에 남깁니다. 한 줄 상태 선택 변경을 직접 리뷰하고 기존 native self-test·Go race/vet·아이콘/서명/diff 검사와 glyph offscreen 렌더를 확인했습니다. 실제 메뉴바 조작은 별도 미검증입니다. `/Applications/Worklink.app`를 원자 교체하고 주요7개 리소스 hash/서명을 확인했으며 자동 재시작하지 않았습니다.
+
+
+## 2026-10-26: 긴 우클릭 전환과 최신 캡처 바로 복사 (S42)
+
+- 명세와 native 정책 테스트를 먼저 작성해 `ModeClipboardRequest` 미구현 compile 실패를 확인했습니다. 현재 대상 최신ID·미완료/nohost·mode revision·클립보드 count·generation·OFF/무경로·만료/단절을 검사하고 이전 사진으로 fallback하지 않습니다. 별도 defaults/named pasteboard의 설정만 변경·복사 차단을 검증합니다.
+- 기존 수동 restore/copy의 원본byte·원격존재확인·scratch정리·lastCount를 재사용하고, 연속전환은 진행요청 종료 뒤 최신pending만 실행합니다. 일반 팝업 체크는 설정만 바꾸며 mode revision을 바꿔 이전 비동기 복사를 무효화합니다. 취소된 원본 가져오기는 진행 표시를 해제합니다.
+- 두 리뷰에서 새캡처가1초감시 전이라 snapshot이 이전사진인 경계, 용량초과/스테이징/등록실패 후 lastCount만 갱신되어 이전사진을 선택하는 경계를 찾았습니다. 독립 재현과 본 담당의 Red를 확인하고 unregisteredCaptureCount marker를 읽기/용량/스테이징 전에 설정하도록 수정했습니다. marker는 현재boardcount 변경 또는 정확한replyjobID snapshot 관측으로만 해제합니다. 실패/업무OFF에서도 동일board내용을 보호하고 file URL 썸네일은 제외합니다.
+- 최종 앱 실제SSH 임시fixture/named pasteboard의 자동복사·원본유지 두 초기모드 모두에서 긴전환 원본/경로 준비, 빠른3회 재전환의 최종원본, 직후 새텍스트복사 보존, 원본SHA·재업로드없음·scratch회수를 통과했습니다. 기존 일반파일batch/한글·동일basename·빈파일·경로재복사, v4/v6 tunnel/title, 단절EOF 소유SSH회수도 통과했습니다.
+- 전체Go race/vet·최종 native self-test·아이콘/서명/plist/diff 검사와 AppKit 렌더를 확인했습니다. 두 독립 최종 리뷰의 최신 임시 앱 전체 native self-test도 통과했습니다. 실제 메뉴바 물리 긴누르기는 기존 검증과 구분하며 이번에는 조작하지 않았고 CUA 거부를 우회하지 않았습니다. 실제 사용자 클립보드·SSH설정을 변경하지 않았습니다.
+
+- `/Applications/Worklink.app`를 원자 교체하고 주요7개 리소스 SHA256·서명을 확인했습니다. 제품 앱은 자동 재시작하지 않았습니다.

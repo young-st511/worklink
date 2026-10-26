@@ -252,6 +252,7 @@ func renderPreviews(_ directory: URL) throws {
   print("Rendered actual AppKit dashboard views and settings to \(directory.path)")
 }
 func nativeSelfTest() throws {
+  try nativeModeClipboardSelfTest()
   try nativeRightHoldSelfTest()
   try nativeStatusRoutingSelfTest()
   try nativeSecondaryReleaseSelfTest()
@@ -1104,6 +1105,7 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
     var pathCopied = false
     var restoreCount = 0
     var restoreStarted = Date()
+    var holdOriginal = false, holdPath = false, rapidHold = false, preservedNewCopy = false
     Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { timer in
       if phase == 0 {
         guard board.string(forType: .string) == job.remotePath,
@@ -1121,6 +1123,53 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
         restoreCount = board.changeCount
         restoreStarted = Date()
       }
+      if phase == 2 {
+        guard board.data(forType: .png) == data else { return }
+        delegate.setClipboardMode(false)
+        delegate.toggleClipboardModeFromStatusItem()
+        phase = 3
+        return
+      }
+      if phase == 3 {
+        guard !delegate.modeClipboardBusy, delegate.pendingModeClipboard == nil,
+          board.data(forType: .png) == data else { return }
+        holdOriginal = true
+        delegate.toggleClipboardModeFromStatusItem()
+        phase = 4
+        return
+      }
+      if phase == 4 {
+        guard !delegate.modeClipboardBusy, board.string(forType: .string) == job.remotePath else { return }
+        holdPath = true
+        delegate.toggleClipboardModeFromStatusItem()
+        delegate.toggleClipboardModeFromStatusItem()
+        delegate.toggleClipboardModeFromStatusItem()
+        phase = 5
+        return
+      }
+      if phase == 5 {
+        guard !delegate.modeClipboardBusy, delegate.pendingModeClipboard == nil,
+          board.data(forType: .png) == data else { return }
+        rapidHold = true
+        delegate.toggleClipboardModeFromStatusItem()
+        board.clearContents()
+        board.setString("new clipboard content", forType: .string)
+        phase = 6
+        return
+      }
+      if phase == 6 {
+        guard !delegate.modeClipboardBusy else { return }
+        preservedNewCopy = board.string(forType: .string) == "new clipboard content"
+        delegate.toggleClipboardModeFromStatusItem()
+        phase = 7
+        return
+      }
+      if phase == 7 {
+        guard !delegate.modeClipboardBusy, board.data(forType: .png) == data else { return }
+        phase = 8
+        restoreCount = board.changeCount
+        restoreStarted = Date()
+      }
       guard Date().timeIntervalSince(restoreStarted) >= 2 else { return }
       let noRepeat =
         delegate.bridge.state?.jobs.filter {
@@ -1131,6 +1180,8 @@ func configureNativeTransferQA(_ delegate: AppDelegate) throws {
         "native_clipboard": true, "path_replaced": replaced, "original_preserved": preserved,
         "manual_path_copied": pathCopied, "original_restored": restored,
         "restore_no_reupload": noRepeat,
+        "hold_original": holdOriginal, "hold_path": holdPath,
+        "rapid_hold": rapidHold, "hold_new_clipboard_preserved": preservedNewCopy,
         "scratch_removed":
           (try? FileManager.default.contentsOfDirectory(
             atPath: delegate.root.appendingPathComponent("restores").path
@@ -1529,4 +1580,101 @@ func nativeSecondaryReleaseSelfTest() throws {
   try check(short == 2 && long == 1 && !router.isTracking,
     "release just before threshold lost short click")
   router.stop()
+}
+
+
+func nativeModeClipboardSelfTest() throws {
+  func check(_ value: Bool, _ text: String) throws {
+    if !value { throw NSError(domain: "Mode clipboard QA", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
+  }
+  var state = fixtureState()
+  let job = state.jobs[0]
+  let request = ModeClipboardRequest(revision: 7, preservesImage: true, job: job,
+    clipboardCount: 12, generation: state.generation)
+  try check(ModeClipboardRequest.latest(in: state)?.id == job.id, "latest capture missing")
+  try check(request.matches(state: state, revision: 7, preservesImage: true, count: 12), "valid copy rejected")
+  try check(!request.matches(state: state, revision: 8, preservesImage: true, count: 12), "old toggle accepted")
+  try check(!request.matches(state: state, revision: 7, preservesImage: false, count: 12), "wrong mode accepted")
+  try check(!request.matches(state: state, revision: 7, preservesImage: true, count: 13), "new clipboard overwritten")
+  var newer = job
+  newer.id = String(repeating: "d", count: 32)
+  newer.status = "queued"
+  state.jobs.insert(newer, at: 0)
+  try check(ModeClipboardRequest.latest(in: state)?.id == newer.id, "pending latest fell back to older image")
+  try check(!request.matches(state: state, revision: 7, preservesImage: true, count: 12), "new capture ignored")
+  state = fixtureState()
+  state.config.imageHost = "other-test"
+  try check(ModeClipboardRequest.latest(in: state) == nil, "other target selected")
+  try check(!request.matches(state: state, revision: 7, preservesImage: true, count: 12), "changed host accepted")
+  state = fixtureState()
+  for flag in ["off", "network", "generation"] {
+    var changed = state
+    if flag == "off" { changed.on = false }
+    if flag == "network" { changed.networkUnavailable = true }
+    if flag == "generation" { changed.generation += 1 }
+    try check(!request.matches(state: changed, revision: 7, preservesImage: true, count: 12), "unsafe state accepted")
+  }
+  let suite = "dev.worklink.mode-copy.qa.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let board = NSPasteboard(name: .init("dev.worklink.mode-copy.qa.\(UUID().uuidString)"))
+  defer { board.releaseGlobally() }
+  board.setString("existing user clipboard", forType: .string)
+  let delegate = AppDelegate()
+  delegate.clipboardPreferences = ClipboardPreferences(defaults: defaults)
+  delegate.clipboardBoard = board
+  delegate.desiredOn = true
+  delegate.bridge.state = fixtureState()
+  board.clearContents()
+  board.setData(Data([1, 2, 3]), forType: .png)
+  delegate.lastCount = board.changeCount - 1
+  delegate.modeClipboardBusy = true
+  delegate.toggleClipboardModeFromStatusItem()
+  try check(delegate.pendingModeClipboard == nil,
+    "unobserved fresh capture selected an older completed image")
+  delegate.lastCount = board.changeCount
+  delegate.captureBusy = true
+  delegate.toggleClipboardModeFromStatusItem()
+  try check(delegate.pendingModeClipboard == nil, "registering capture selected an older image")
+  delegate.captureBusy = false
+  var rejected = fixtureState()
+  rejected.config.limits.imageBytes = 1
+  delegate.bridge.state = rejected
+  delegate.lastCount = board.changeCount - 1
+  delegate.observeClipboard() // Size rejection happens before any staging file/RPC.
+  delegate.toggleClipboardModeFromStatusItem()
+  try check(delegate.pendingModeClipboard == nil, "rejected fresh capture selected older image")
+  delegate.bridge.state = fixtureState()
+  delegate.unregisteredCaptureCount = board.changeCount
+  delegate.toggleClipboardModeFromStatusItem()
+  try check(delegate.pendingModeClipboard == nil, "capture reply before snapshot selected older image")
+  delegate.captureAwaitingJobID = "new-capture-test-id"
+  delegate.settleCaptureRegistration(in: fixtureState())
+  try check(delegate.unregisteredCaptureCount != nil, "older capture cleared registration latch")
+  var registered = fixtureState()
+  registered.jobs[0].id = "new-capture-test-id"
+  delegate.settleCaptureRegistration(in: registered)
+  try check(delegate.unregisteredCaptureCount == nil && delegate.captureAwaitingJobID == nil,
+    "exact capture snapshot did not settle registration")
+  delegate.modeClipboardBusy = false
+  board.clearContents()
+  board.setString("existing user clipboard", forType: .string)
+  for reason in ["off", "network", "disconnected", "pending", "expired", "empty"] {
+    var unavailable = fixtureState()
+    delegate.dashboard.expired.removeAll()
+    if reason == "off" { unavailable.on = false }
+    if reason == "network" { unavailable.networkUnavailable = true }
+    if reason == "disconnected" { unavailable.hosts.removeAll() }
+    if reason == "pending" { unavailable.jobs[0].status = "queued" }
+    if reason == "expired" { delegate.dashboard.expired.insert(job.id) }
+    if reason == "empty" { unavailable.jobs.removeAll() }
+    delegate.bridge.state = unavailable
+    delegate.setClipboardMode(false)
+    let count = board.changeCount
+    delegate.toggleClipboardModeFromStatusItem()
+    try check(delegate.clipboardPreferences.preservesImage && !delegate.modeClipboardBusy
+      && delegate.pendingModeClipboard == nil && delegate.dashboard.restoring == nil
+      && board.changeCount == count && board.string(forType: .string) == "existing user clipboard",
+      "unavailable shortcut mutated clipboard or queued work: \(reason)")
+  }
 }
